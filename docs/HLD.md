@@ -1,4 +1,4 @@
-# AgentVMs Platform — Complete Design Document
+# AgentVM Platform — Complete Design Document
 
 ## 1. Vision (The 5-Year-Old Version)
 
@@ -337,7 +337,7 @@ The VM Manager is the heart of the platform. It wraps libvirt operations with se
 
 ### 5.2 Session Model
 
-Every workload is a session. This is the abstraction layer the orchestrator uses to manage both AgentVMs and clampdown uniformly.
+Every workload is a session. This is the abstraction layer the orchestrator uses to manage both AgentVM and clampdown uniformly.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -807,7 +807,7 @@ class AuditEvent:
     #   resource.limit_hit
     #   shared_folder.mount, shared_folder.unmount
 
-    # AgentVMs-specific event types:
+    # AgentVM-specific event types:
     #   vm.create, vm.boot, vm.shutdown, vm.crash
     #   vm.qemu_exit, vm.console_line
     #   vm.disk_create, vm.disk_delete
@@ -1315,7 +1315,7 @@ echo "1000" > pids.max             # max 1000 processes
 
 ## 11. Orchestrator Contract
 
-AgentVMs implements the `IsolationBackend` protocol so that an orchestrator can route workloads uniformly between AgentVMs and clampdown.
+AgentVM implements the `IsolationBackend` protocol so that an orchestrator can route workloads uniformly between AgentVM and clampdown.
 
 ### 11.1 Backend Protocol
 
@@ -1441,7 +1441,7 @@ class Orchestrator:
 
 ### 11.4 Feature Parity Matrix
 
-| Capability | clampdown | AgentVMs | Orchestrator Sees |
+| Capability | clampdown | AgentVM | Orchestrator Sees |
 |---|---|---|---|
 | Session management | ✓ | ✓ | Uniform |
 | Runtime network control | ✓ (`allow/block/reset`) | ✓ (`allow/block/reset`) | Uniform API |
@@ -1525,7 +1525,7 @@ Test the full workflow from API call to running agent.
 tests/e2e/
 ├── test_full_session.py         # API → session creation → SSH → agent runs → cleanup
 ├── test_agent_workflow.py       # Agent in VM uses proxy to call API, writes to shared folder
-├── test_orchestrator_routing.py # Orchestrator selects AgentVMs vs clampdown
+├── test_orchestrator_routing.py # Orchestrator selects AgentVM vs clampdown
 ├── test_multi_session.py        # Multiple sessions running concurrently
 ├── test_shared_folder_workflow.py # Host writes project, VM reads/modifies/writes output
 ├── test_network_workflow.py     # Start strict, allow domain at runtime, verify access
@@ -2128,9 +2128,9 @@ Deliverable: `systemctl start agentvm` runs the full platform; orchestrator can 
 | Shared folders | virtiofs with AppArmor | Host↔VM channel with escape prevention |
 | Session abstraction | Separate from VM lifecycle | Enables orchestrator compatibility with clampdown |
 | Network modes | strict/restricted/permissive | Feature parity with clampdown's two-tier model |
-| Orchestrator interface | IsolationBackend protocol | Uniform routing across clampdown + AgentVMs |
+| Orchestrator interface | IsolationBackend protocol | Uniform routing across clampdown + AgentVM |
 | Testing | Unit + integration + E2E + red-team | Security-critical infrastructure needs exhaustive validation |
 | Auth proxy language | Go (static binary) | Minimal attack surface, no shell, no libc |
 | Audit format | Unified across backends | Orchestrator needs single audit stream |
 
-This design prioritizes **host security over agent convenience** while providing the orchestrator with a uniform interface to route workloads between AgentVMs (for VM-requiring workloads) and clampdown (for lightweight container workloads).
+This design prioritizes **host security over agent convenience** while providing the orchestrator with a uniform interface to route workloads between AgentVM (for VM-requiring workloads) and clampdown (for lightweight container workloads).
