@@ -114,6 +114,8 @@ mypy src/ --strict
 
 ### 5. Development Workflow
 
+Before starting, read [CODE-STANDARD.md](docs/CODE-STANDARD.md), [todo.md](todo/todo.md), and the `todo/PHASE#.md` file corresponding to whichever phase your working on.
+
 1. **Pick a task** from the current phase board in `todo/PHASE<N>.md`.
 2. **Update status** to `In Progress`.
 3. **Read the LLD** — every task references its LLD section. Read it before writing code.
