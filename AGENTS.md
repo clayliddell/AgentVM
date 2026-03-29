@@ -117,7 +117,8 @@ mypy src/ --strict
 Before starting, read [CODE-STANDARD.md](docs/CODE-STANDARD.md), [todo.md](todo/todo.md), and the `todo/PHASE#.md` file corresponding to whichever phase your working on.
 
 1. **Pick a task** from the current phase board in `todo/PHASE<N>.md`.
-2. **Update status** to `In Progress`.
+2. **Update status** to `In Progress` in `main` branch (no need to push).
+3. **Checkout a new Branch** - Checkout a new branch in git for tracking your progress. You'll later use this branch to create a PR for your work.
 3. **Read the LLD** — every task references its LLD section. Read it before writing code.
 4. **Write a failing test first** (TDD). See [CODE-STANDARD.md](docs/CODE-STANDARD.md) §4.
 5. **Implement the minimum** to make the test pass.
@@ -126,7 +127,7 @@ Before starting, read [CODE-STANDARD.md](docs/CODE-STANDARD.md), [todo.md](todo/
    ```bash
    ruff check src/ && ruff format --check src/ && mypy src/ --strict && pytest tests/unit/ --cov-fail-under=95
    ```
-8. **Update task status** to `Ready for Review`.
+8. **Update task status** to `Ready for Review` in `main` branch (no need to push).
 9. **Submit PR.** CI must pass all gates before merge.
 
 ### 6. Key Conventions
