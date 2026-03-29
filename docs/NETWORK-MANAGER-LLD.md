@@ -83,6 +83,12 @@ class NetworkPolicyEngine:
     def get_rules(self, session_id: str) -> list[NetworkRule]:
         """Return current network rules for a session."""
 
+    def get_session_network_policy(self, session_id: str) -> dict:
+        """Return session's effective network policy: mode, default action, vnet_name, vm_ip, active rule count."""
+
+    def update_session_ip(self, session_id: str, old_ip: str, new_ip: str) -> None:
+        """Update iptables rules after VM IP changes (e.g., on resume). Replaces old_ip with new_ip in all per-VM rules."""
+
 class BridgeManager:
     """Bridge lifecycle management."""
 
@@ -106,6 +112,14 @@ class RateLimiter:
 ```
 
 ### 3.2 Outputs (Return Types and Events)
+
+**Port-aware enforcement limitation:** The current implementation uses `ipset (hash:ip)` which does not support port matching. The `port` field in `NetworkRule` and `allow_domain()`/`block_domain()` is accepted for future use but is **not enforced** at the iptables level. To enforce port-specific rules, the ipset type must be changed to `hash:ip,port` and iptables rules must use `--match-set` with port matching. This is a known gap versus the HLD contract.
+
+**IP/MAC preallocation contract:** When Session Manager creates a session, the following sequence ensures network identity is established before VM creation:
+1. `BridgeManager.allocate_vm_interface(session_id)` → returns `(vnet_name, mac_address)`
+2. These values are passed to `VMSpec` and used in libvirt XML generation
+3. `NetworkPolicyEngine.setup_session_network(session_id, vm_ip, ...)` is called after VM boots and acquires its DHCP-assigned IP via the preallocated MAC
+4. The dnsmasq lease file is consulted via `BridgeManager.get_vm_ip(session_id, mac_address)` to resolve the assigned IP
 
 **Events emitted (to Audit Logger):**
 - `network.allow` — Domain added to allowlist or removed from blocklist
@@ -158,8 +172,9 @@ class RateLimiter:
   * **Task:** Implement base iptables rules in `firewall.py` — for each VM with IP `10.0.0.X`:
     1. `-A FORWARD -i agentvm-br0 -s 10.0.0.X -d 10.0.0.0/24 -j DROP` (VM→VM/host subnet)
     2. `-A FORWARD -i agentvm-br0 -s 10.0.0.X -d <host_mgmt_ip> -j DROP` (VM→host)
-    3. `-A FORWARD -i agentvm-br0 -s 10.0.0.X -d 172.16.0.0/12 -j DROP` (private CIDR)
-    4. `-A FORWARD -i agentvm-br0 -s 10.0.0.X -d 192.168.0.0/16 -j DROP` (private CIDR)
+    3. `-A FORWARD -i agentvm-br0 -s 10.0.0.X -d 10.0.0.0/8 -j DROP` (entire 10/8 private range per HLD)
+    4. `-A FORWARD -i agentvm-br0 -s 10.0.0.X -d 172.16.0.0/12 -j DROP` (private CIDR)
+    5. `-A FORWARD -i agentvm-br0 -s 10.0.0.X -d 192.168.0.0/16 -j DROP` (private CIDR)
     Rules are inserted at the top of FORWARD chain with unique comments for identification and cleanup.
     * *Identified Blockers/Dependencies:* Bridge must exist, VM must have an assigned IP.
 

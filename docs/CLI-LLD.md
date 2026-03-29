@@ -24,8 +24,9 @@ The CLI provides a command-line interface for managing sessions, VMs, network po
 | CLI-FR-10 | Provide `host` command to show host health and capacity | 7 |
 | CLI-FR-11 | Support `--format` flag: `table` (default), `json`, `yaml` | 7 |
 | CLI-FR-12 | Support `--api-url` flag to override daemon endpoint (default `http://localhost:9090`) | 7 |
-| CLI-FR-13 | Support `--api-key` flag for authentication | 7 |
+| CLI-FR-13 | Support `--api-key` flag for daemon authentication | 7 |
 | CLI-FR-14 | Support `--verbose` flag for detailed output | 7 |
+| CLI-FR-15 | Support `--provider-key` flag (on `session create`) for upstream API keys distinct from daemon auth key | 7 |
 
 ---
 
@@ -47,7 +48,7 @@ The CLI provides a command-line interface for managing sessions, VMs, network po
 ```
 agentvm
 ├── session
-│   ├── create    (--name, --image, --cpu, --memory, --disk, --ssh-key, --network-policy, --api-key, --shared-folder)
+│   ├── create    (--name, --image, --cpu, --memory, --disk, --ssh-key, --network-policy, --provider-key, --shared-folder)
 │   ├── destroy   <session-id>
 │   ├── list      [--owner]
 │   └── status    <session-id>
@@ -98,7 +99,8 @@ The CLI is a pure HTTP client. It calls the REST API endpoints:
 | `proxy logs` | GET | `/api/v1/sessions/{sid}/proxy/logs` |
 | `ssh` | GET | `/api/v1/sessions/{sid}/ssh` |
 | `logs` | GET | `/api/v1/sessions/{sid}/logs` |
-| `audit` | GET | `/api/v1/sessions/{sid}/audit` |
+| `audit` (session-scoped) | GET | `/api/v1/sessions/{sid}/audit` |
+| `audit` (global) | GET | `/api/v1/audit?last=...` |
 | `images list` | GET | `/api/v1/images` |
 | `images upload` | POST | `/api/v1/images` |
 | `images delete` | DELETE | `/api/v1/images/{name}` |
@@ -127,6 +129,7 @@ The CLI is a pure HTTP client. It calls the REST API endpoints:
 * **Story:** As a developer, I have a Click CLI application with all subcommands.
   * **Task:** Implement `main.py` — Click group with global options (`--api-url`, `--api-key`, `--format`, `--verbose`). Create an HTTP client helper that wraps `httpx` or `requests` with auth header injection and error handling.
     * *Identified Blockers/Dependencies:* REST API must be running.
+  * **Note on `--api-key` vs `--provider-key`:** `--api-key` is the daemon authentication token (sent as `Authorization: Bearer` header). `--provider-key` (on `session create`) is an upstream provider API key (e.g., OpenAI key) passed in the `api_keys` request body. These MUST NOT be confused — the CLI must use distinct flag names.
 
 * **Story:** As a user, I can create/list/status/destroy sessions from the CLI.
   * **Task:** Implement `session` group with `create`, `destroy`, `list`, `status` commands.

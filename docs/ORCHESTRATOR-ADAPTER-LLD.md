@@ -223,8 +223,8 @@ class AgentVMBackend:
     * *Identified Blockers/Dependencies:* Network Manager.
 
 * **Story:** As an orchestrator, I can inject secrets into a session.
-  * **Task:** Implement `inject_secret(session_id, key, value)` — write the secret to the session's proxy config and restart the proxy process so the new secret is available.
-    * *Identified Blockers/Dependencies:* Auth Proxy Manager.
+  * **Task:** Implement `inject_secret(session_id, key, value)` — call `AuthProxyManager.inject_secret(session_id, key, value)` which writes the new secret to the proxy config and restarts the proxy process so the updated secret is available.
+    * *Identified Blockers/Dependencies:* Auth Proxy Manager `inject_secret()`.
 
 * **Story:** As an orchestrator, I can query backend capabilities and host capacity.
   * **Task:** Implement `capabilities()`:

@@ -63,6 +63,8 @@ class VMSpec:
     disk_gb: int                       # Disk size in GB (10-200)
     ssh_public_key: str                # SSH public key for cloud-init injection
     bridge_name: str                   # Network bridge to attach to (e.g., "agentvm-br0")
+    vnet_name: str                     # Virtual network interface name (e.g., "vnet0") — preallocated by Network Manager
+    mac_address: str                   # MAC address for VM NIC — preallocated by Network Manager
     shared_folder_host_path: str       # Host path for shared folder mount
     cloud_init_iso: str                # Path to generated cloud-init ISO
     nested_virt: bool = False          # Enable nested virtualization
@@ -75,6 +77,12 @@ class VMManager:
 
     def destroy_vm(self, vm_id: str) -> None:
         """Hard-kill VM, undefine domain, delete disk, release resources."""
+
+    def soft_shutdown(self, vm_id: str, timeout: int = 30) -> None:
+        """Request graceful VM shutdown via ACPI. Falls back to hard kill after timeout."""
+
+    def start_vm(self, vm_id: str) -> VMConnectionInfo:
+        """Start a previously defined but inactive VM domain. Returns connection info."""
 
     def get_vm_status(self, vm_id: str) -> VMStatus:
         """Return current VM state, resource usage, and health."""
@@ -141,7 +149,9 @@ class SSHInfo:
 **Events emitted (to Audit Logger):**
 - `vm.create` — VM domain created
 - `vm.boot` — VM boot completed (SSH reachable)
-- `vm.shutdown` — VM shutdown initiated
+- `vm.shutdown` — VM graceful shutdown initiated
+- `vm.shutdown_timeout` — Graceful shutdown timed out, forced destroy
+- `vm.start` — VM started from stopped state
 - `vm.crash` — VM crashed or QEMU exited unexpectedly
 - `vm.qemu_exit` — QEMU process exited (expected or unexpected)
 - `vm.disk_create` — qcow2 overlay created
@@ -267,6 +277,12 @@ class SSHInfo:
 * **Story:** As an orchestrator, I can query VM capacity and status through the VM Manager.
   * **Task:** Ensure `list_vms()` and `get_vm_status()` return data compatible with the `IsolationBackend` protocol (sessions as the primary abstraction, VMs as backing resources).
     * *Identified Blockers/Dependencies:* Orchestrator Adapter must define the protocol.
+
+* **Story:** As a Session Manager, I can gracefully shutdown and restart a VM for session resume.
+  * **Task:** Implement `VMManager.soft_shutdown(vm_id, timeout)` — send ACPI shutdown via `domain.shutdown()`, poll domain state up to `timeout` seconds, emit `vm.shutdown`. If timeout expires, call `domain.destroy()` and emit `vm.shutdown_timeout`. Do NOT undefine or delete disk — the domain definition persists for `start_vm()`.
+    * *Identified Blockers/Dependencies:* libvirt domain lifecycle events.
+  * **Task:** Implement `VMManager.start_vm(vm_id)` — call `domain.create()` on a previously defined (but inactive) domain, wait for boot, emit `vm.start`, return `VMConnectionInfo`. Used by session resume.
+    * *Identified Blockers/Dependencies:* `soft_shutdown()` must preserve domain definition.
 
 ---
 

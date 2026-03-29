@@ -173,13 +173,21 @@ def configure_logging(log_level: str = "INFO",
 * **Story:** As a platform operator, I can check host and session health.
   * **Task:** Implement `health.py` — `HealthChecker` class:
     - `check_host_health()`: verify `/dev/kvm` exists, libvirtd is running, disk usage <90%, memory usage <90%.
-    - `check_session_health(session_id)`: verify VM is booted (SSH probe or QEMU guest agent ping), proxy is responsive (HTTP health probe), shared folder directory exists and is accessible.
-    - `check_resource_alerts()`: return warnings if any resource exceeds 80% of configured limits.
+    - `check_session_health(session_id)`: compose three sub-checks (below), aggregate into `HealthStatus`.
     * *Identified Blockers/Dependencies:* VM Manager (SSH info), Auth Proxy Manager (health_check()), Storage Manager (shared folder path).
+  * **Task:** Implement sub-check: `check_vm_booted(session_id)` — verify VM is running (via VM Manager `get_vm_status()` or SSH probe). Returns bool.
+  * **Task:** Implement sub-check: `check_proxy_responsive(session_id)` — call `AuthProxyManager.health_check()`. Returns bool.
+  * **Task:** Implement sub-check: `check_shared_folder_accessible(session_id)` — verify shared folder directory exists and is readable. Returns bool.
+  * **Task:** Implement `check_resource_alerts()` — return warnings if any resource exceeds 80% of configured limits (CPU, memory, disk). Separate from health checks.
+    * *Identified Blockers/Dependencies:* Config thresholds.
 
 * **Story:** As a platform operator, structured logging is configured with the correct format and level.
   * **Task:** Implement `logging_cfg.py` — configure `structlog` with JSON renderer, add standard fields (timestamp, level, logger name). Support configurable log level from `observability.log_level` config.
     * *Identified Blockers/Dependencies:* Config.
+
+* **Story:** As a platform operator, VM serial console output is captured to per-VM log files (OB-FR-10).
+  * **Task:** Implement serial console capture — configure libvirt XML with `<serial type='file'>` pointing to `/var/lib/agentvm/logs/vm-<uuid>/serial.log`. The `<log>` element in the libvirt domain XML captures all serial output. VM Manager's `xml_builder.py` generates this config. Observability reads the log file for the `/sessions/{sid}/logs` endpoint.
+    * *Identified Blockers/Dependencies:* VM Manager XML builder, storage directory structure.
 
 * **Story:** As a developer, I have unit tests for audit formatting and health checks.
   * **Task:** Implement `test_audit.py` — test AuditEvent construction and field validation, test emit writes to mock DB and log file.

@@ -17,7 +17,7 @@ The REST API is the HTTP interface exposed by the agentvm daemon. Built with Fas
 | API-FR-03 | Expose network policy endpoints: `GET/POST /sessions/{sid}/network`, `POST allow/block/reset` | 6.1 |
 | API-FR-04 | Expose proxy endpoints: `GET /sessions/{sid}/proxy`, `GET /sessions/{sid}/proxy/logs` | 6.1 |
 | API-FR-05 | Expose shared folder endpoints: `GET /sessions/{sid}/shared`, `POST /sessions/{sid}/shared/sync` | 6.1 |
-| API-FR-06 | Expose observability endpoints: `GET /sessions/{sid}/metrics`, `GET /sessions/{sid}/logs`, `GET /sessions/{sid}/audit` | 6.1 |
+| API-FR-06 | Expose observability endpoints: `GET /sessions/{sid}/metrics`, `GET /sessions/{sid}/logs`, `GET /sessions/{sid}/audit`, `GET /audit` (global) | 6.1 |
 | API-FR-07 | Expose host endpoints: `GET /health`, `GET /capacity`, `GET /metrics` (Prometheus) | 6.1 |
 | API-FR-08 | Expose image management endpoints: `POST/GET/DELETE /images`, `GET /images/{name}` | 6.1 |
 | API-FR-09 | Expose orchestrator endpoint: `GET /capabilities` | 6.1 |
@@ -78,8 +78,9 @@ Shared:
 
 Observability:
   GET    /sessions/{sid}/metrics       → SessionMetricsResponse
-  GET    /sessions/{sid}/logs          → StreamingResponse or LogResponse
+  GET    /sessions/{sid}/logs          → LogResponse
   GET    /sessions/{sid}/audit         → List[AuditEventResponse]
+  GET    /audit                        → List[AuditEventResponse]  (global, all sessions)
 
 Host:
   GET    /health                       → HealthResponse
@@ -137,6 +138,49 @@ class SessionResponse(BaseModel):
     shared_folder: Optional[SharedFolderResponse]
     created_at: str
     metadata: dict
+    # Live health fields (from get_session/status enrichment)
+    healthy: Optional[bool] = None
+    proxy_healthy: Optional[bool] = None
+    cpu_usage_percent: Optional[float] = None
+    memory_used_mb: Optional[int] = None
+
+class NetworkPolicyResponse(BaseModel):
+    session_id: str
+    policy_mode: str                   # "strict" | "restricted" | "permissive"
+    vm_ip: Optional[str]
+    vnet_name: Optional[str]
+    rules: list[NetworkRuleResponse]
+    default_action: str                # "deny" (strict) | "accept" (restricted/permissive)
+
+class NetworkRuleResponse(BaseModel):
+    domain: str
+    ip_address: Optional[str]
+    port: Optional[int]
+    action: str                        # "allow" | "block"
+    source: str                        # "startup" | "runtime"
+    created_at: str
+
+class SessionMetricsResponse(BaseModel):
+    session_id: str
+    cpu_usage_percent: float
+    memory_used_mb: int
+    disk_read_bytes: int
+    disk_write_bytes: int
+    net_rx_bytes: int
+    net_tx_bytes: int
+    proxy_requests_total: int
+    proxy_errors_total: int
+    vm_state: str
+
+class LogResponse(BaseModel):
+    session_id: str
+    entries: list[LogEntry]
+    has_more: bool
+
+class LogEntry(BaseModel):
+    timestamp: str
+    stream: str                        # "stdout" | "stderr" | "serial" | "proxy"
+    message: str
 
 class ErrorCode(str, Enum):
     unauthorized = "unauthorized"
@@ -202,7 +246,7 @@ class ErrorResponse(BaseModel):
 
 * **Story:** As an API consumer, I can control network policy at runtime.
   * **Task:** Implement `routes/network.py`:
-    - `GET /sessions/{sid}/network` — call `NetworkPolicyEngine.get_rules()`, return `NetworkPolicyResponse`.
+    - `GET /sessions/{sid}/network` — call `NetworkPolicyEngine.get_session_network_policy()`, return `NetworkPolicyResponse` (includes policy_mode, vm_ip, vnet_name, rules, and default_action).
     - `POST /sessions/{sid}/network/allow` — parse `NetworkActionRequest`, call `NetworkPolicyEngine.allow_domain()`, return IPs resolved.
     - `POST /sessions/{sid}/network/block` — similar to allow.
     - `POST /sessions/{sid}/network/reset` — call `NetworkPolicyEngine.reset_network()`, return 204.
@@ -219,6 +263,12 @@ class ErrorResponse(BaseModel):
     - `GET /sessions/{sid}/shared` — return shared folder paths from metadata.
     - `POST /sessions/{sid}/shared/sync` — trigger resync (placeholder for rsync fallback), return 202.
     * *Identified Blockers/Dependencies:* Storage Manager.
+
+* **Story:** As an API consumer, I can query session and global audit logs.
+  * **Task:** Implement `routes/audit.py`:
+    - `GET /sessions/{sid}/audit` — call `AuditLogger.query(session_id=sid)`, return `List[AuditEventResponse]`.
+    - `GET /audit` — call `AuditLogger.query()` (no session_id filter), return `List[AuditEventResponse]`. Supports `?last=<n>` and `?since=<timestamp>` query params.
+    * *Identified Blockers/Dependencies:* Observability `AuditLogger.query()`.
 
 * **Story:** As an API consumer, I can manage base images.
   * **Task:** Implement `routes/images.py`:

@@ -194,6 +194,8 @@ class HardeningChecker:
     * *Identified Blockers/Dependencies:* Config (reserved resources).
   * **Task:** Implement `reconcile_allocations()` — called on daemon startup. Queries metadata store for all active VMs, rebuilds in-memory allocation state from their resource records. Ensures capacity tracking is correct after a daemon restart where in-memory state was lost.
     * *Identified Blockers/Dependencies:* Metadata store must be initialized, `get_vms()` with status filter.
+  * **Prerequisite: cgroup v2 delegation** — The daemon's systemd unit MUST include `Delegate=yes` under `[Service]` to receive delegation of the `agentvm.slice` cgroup subtree. Verify on startup: check that `/sys/fs/cgroup/agentvm.slice/` is writable by the daemon process. If not writable, log a fatal error with remediation instructions.
+    * *Identified Blockers/Dependencies:* systemd unit configuration.
 
 ---
 
@@ -259,6 +261,7 @@ class HardeningChecker:
 |---|---|
 | `/dev/kvm` not available | Return `supports_kvm=False`, VMs run without KVM (slower, nested virt impossible) |
 | cgroup v2 not mounted | Fatal error — refuse to start |
+| cgroup v2 delegation not configured | Fatal error — systemd must delegate `agentvm.slice` to the daemon user. Add `Delegate=yes` in the agentvm systemd unit's `[Service]` section, or configure `systemctl set-property` for the slice. Without delegation, the daemon cannot create sub-cgroup scopes for VMs. |
 | Insufficient capacity | Return `CapacityCheckResult.sufficient=False` with shortfall description |
 | cgroup write failure (permission denied) | Log error, raise `CGroupError` |
 | CPU topology detection failure | Fall back to sequential core allocation |

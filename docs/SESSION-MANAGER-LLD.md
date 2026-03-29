@@ -135,6 +135,12 @@ class WorkloadSession:
 
     # VM backing resource
     vm_id: Optional[str]
+
+    # Live health (populated by get_session/status, not persisted)
+    healthy: Optional[bool] = None     # True if VM booted + proxy healthy
+    proxy_healthy: Optional[bool] = None  # True if proxy responds to health probe
+    cpu_usage_percent: Optional[float] = None
+    memory_used_mb: Optional[int] = None
 ```
 
 **Events emitted (to Audit Logger):**
@@ -182,30 +188,35 @@ class WorkloadSession:
     1. Validate request (check image exists, resource bounds).
     2. Check host capacity via Host Manager.
     3. Transition session state to `creating`, persist to metadata store.
-    4. Create shared folder directory via Storage Manager.
-    5. Generate cloud-init ISO via Storage Manager (injecting SSH key, shared folder config).
-    6. Start auth proxy via Auth Proxy Manager (needs VM IP for validation; proxy port/key injected into cloud-init in prior step).
-    7. Apply network rules via Network Manager.
-    8. Create VM via VM Manager.
-    9. Transition to `running`, update metadata.
-    10. Return `WorkloadSession` with all connection info populated.
+    4. Allocate vnet interface (vnet_name, mac_address) via Network Manager `BridgeManager.allocate_vm_interface()`.
+    5. Create shared folder directory via Storage Manager.
+    6. Generate cloud-init ISO via Storage Manager (injecting SSH key, shared folder config, proxy port/key placeholder).
+    7. Start auth proxy via Auth Proxy Manager (needs VM IP for validation; proxy port/key injected into cloud-init in prior step).
+    8. Create VM via VM Manager (receives vnet_name, mac_address in VMSpec; VM boots and gets DHCP IP).
+    9. Resolve VM IP via Network Manager `BridgeManager.get_vm_ip()` using the allocated MAC.
+    10. Apply network rules via Network Manager `setup_session_network()` (now that VM IP is known).
+    11. Update proxy VM IP if needed (proxy validates source IP).
+    12. Transition to `running`, update metadata.
+    13. Return `WorkloadSession` with all connection info populated.
 
     On any step failure: roll back all previously completed steps (e.g., if VM creation fails, stop proxy, clean network rules, remove shared folder, delete cloud-init ISO, purge metadata).
     * *Identified Blockers/Dependencies:* VM Manager, Auth Proxy Manager, Network Manager, Storage Manager, Metadata Store, Host Manager must all have basic implementations (Phase 1 for VM Manager, partial Phase 2 for others).
 
 * **Story:** As a developer, I can destroy a session and all resources are cleaned up.
   * **Task:** Implement `SessionManager.destroy_session()` — orchestrate destroy sequence:
-    1. Transition to `destroyed` in metadata (idempotent — if already destroyed, return).
+    1. If already `destroyed`, return immediately (idempotent).
     2. Destroy VM via VM Manager (this handles domain + disk cleanup).
     3. Stop auth proxy via Auth Proxy Manager.
     4. Clean network rules via Network Manager.
     5. Remove shared folder directory via Storage Manager.
     6. Purge all metadata records (sessions, vms, proxies, shared_folders, resource_allocations).
-    7. Emit `session.stop` audit event.
+    7. Transition to `destroyed` in metadata (only after all cleanup succeeds).
+    8. Emit `session.stop` audit event.
+    If any cleanup step fails, transition to `error` state instead of `destroyed`, log the failure, and leave remaining metadata for manual inspection.
     * *Identified Blockers/Dependencies:* All sub-component destroy methods must be implemented.
 
 * **Story:** As a developer, I can get session details and list sessions.
-  * **Task:** Implement `get_session()` — query metadata store for session record, enrich with live VM status from VM Manager, proxy health from Auth Proxy Manager, return `WorkloadSession`.
+  * **Task:** Implement `get_session()` — query metadata store for session record, enrich with live VM status from VM Manager (`cpu_usage_percent`, `memory_used_mb`), proxy health from Auth Proxy Manager (`health_check()`), and derive `healthy` (VM running AND proxy responsive) and `proxy_healthy` fields. Return `WorkloadSession` with all live fields populated.
     * *Identified Blockers/Dependencies:* Metadata store read, VM Manager `get_vm_status()`, Auth Proxy Manager `health_check()`.
   * **Task:** Implement `list_sessions()` — query metadata store with optional owner filter, enrich each with live status.
     * *Identified Blockers/Dependencies:* Same as `get_session()`.
@@ -230,6 +241,8 @@ class WorkloadSession:
   * **Task:** Ensure Session Manager methods are async-compatible (wrap blocking libvirt calls in `asyncio.to_thread()` if needed) so FastAPI endpoints can call them without blocking the event loop.
     * *Identified Blockers/Dependencies:* Phase 2 Session Manager implementation complete.
 
+**Sync/Async Model:** Session Manager public methods are synchronous. The REST API wraps all calls in `asyncio.to_thread()` at the route handler level. Metadata Store operations are async (using `aiosqlite`). Within synchronous Session Manager methods, metadata store calls use `asyncio.run()` or are delegated to a shared event loop. The boundary is: Session Manager is sync, Metadata Store is async, and FastAPI bridges the two.
+
 ---
 
 ### Phase 7: Orchestrator Adapter + Production (Week 7-8)
@@ -239,10 +252,11 @@ class WorkloadSession:
 **User Stories & Tasks:**
 
 * **Story:** As a platform operator, I can shutdown a session (VM stops) and later resume it.
-  * **Task:** Implement `shutdown_session()` — stop the VM via VM Manager, keep proxy/network/shared folder/metadata intact, transition to `shutdown`.
+  * **Task:** Implement `shutdown_session()` — stop the VM via VM Manager `soft_shutdown()`, keep proxy/network/shared folder/metadata intact, transition to `shutdown`.
     * *Identified Blockers/Dependencies:* VM Manager supports soft shutdown.
   * **Task:** Implement `resume_session()` — generate new cloud-init ISO (same config), create new VM from existing shared folder, transition back to `running`.
     * *Identified Blockers/Dependencies:* `shutdown_session()` implemented.
+  * **Resume IP/MAC preservation:** On resume, the VM is recreated with a new DHCP lease. The Network Manager must update iptables rules with the new IP. The Auth Proxy Manager must update `vm_ip` in the proxy config and reload (or restart) the proxy so source IP validation passes. Session Manager coordinates this: after VM boots and acquires a new IP, call `NetworkManager.update_session_ip(session_id, old_ip, new_ip)` and `AuthProxyManager.update_vm_ip(session_id, new_ip)`.
 
 * **Story:** As a platform operator, sessions auto-destroy after their TTL expires.
   * **Task:** Implement TTL check in the Session Manager's background task — query metadata store for sessions with `created_at` older than `security.vm_max_lifetime_hours`, initiate destroy for expired sessions.
@@ -259,29 +273,37 @@ class WorkloadSession:
 ```
 create_session() rollback sequence (if step N fails):
 
-  Step 4 failed (shared folder):
+  Step 4 failed (vnet allocation):
+    → Purge metadata record
+
+  Step 5 failed (shared folder):
+    → Release vnet interface
     → Purge metadata record
   
-  Step 5 failed (cloud-init):
+  Step 6 failed (cloud-init):
     → Remove shared folder directory
+    → Release vnet interface
     → Purge metadata record
 
-  Step 6 failed (proxy):
+  Step 7 failed (proxy):
     → Delete cloud-init ISO
     → Remove shared folder directory
-    → Purge metadata record
-
-  Step 7 failed (network):
-    → Stop proxy
-    → Delete cloud-init ISO
-    → Remove shared folder directory
+    → Release vnet interface
     → Purge metadata record
 
   Step 8 failed (VM):
-    → Clean network rules
     → Stop proxy
     → Delete cloud-init ISO
     → Remove shared folder directory
+    → Release vnet interface
+    → Purge metadata record
+
+  Step 9-10 failed (IP resolution / network rules):
+    → Destroy VM
+    → Stop proxy
+    → Delete cloud-init ISO
+    → Remove shared folder directory
+    → Release vnet interface
     → Purge metadata record
 
   Each rollback step must be idempotent (safe to re-run if rollback itself fails).
@@ -291,7 +313,9 @@ create_session() rollback sequence (if step N fails):
 |---|---|
 | Base image not found | Reject before provisioning starts, no rollback needed |
 | Insufficient capacity | Reject before provisioning starts, no rollback needed |
-| Cloud-init generation failure | Rollback to step 4, raise error |
-| Proxy port exhausted | Rollback to step 5, raise error |
+| Vnet allocation failure | Rollback to step 3, raise error |
+| Cloud-init generation failure | Rollback to step 5, raise error |
+| Proxy port exhausted | Rollback to step 6, raise error |
 | VM boot timeout | Full rollback, raise error |
+| IP resolution failure (no DHCP lease) | Destroy VM, stop proxy, full rollback, raise error |
 | Partial rollback failure | Log error, emit `session.error`, leave orphan marker in metadata for manual cleanup |

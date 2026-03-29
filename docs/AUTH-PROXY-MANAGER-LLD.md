@@ -93,6 +93,15 @@ class AuthProxyManager:
 
     def is_port_available(self, port: int) -> bool:
         """Check if a port is not in use by any proxy."""
+
+    def inject_secret(self, session_id: str, key: str, value: str) -> None:
+        """Add or update a secret in the proxy's environment. Restarts proxy process so new secret takes effect."""
+
+    def update_vm_ip(self, session_id: str, new_ip: str) -> None:
+        """Update the expected VM source IP in proxy config (for session resume). Restarts proxy."""
+
+    def reload_proxy(self, session_id: str) -> None:
+        """Restart proxy process to pick up config changes (new secrets, updated IP)."""
 ```
 
 ### 3.2 Go Binary — Interface
@@ -111,12 +120,13 @@ log_path: "/var/lib/agentvm/logs/proxy-sess-a1b2c3d4.log"
 upstreams:
   openai:
     base_url: "https://api.openai.com"
-    api_key_env: ""                   # Real key injected via env var at launch
-    api_key: "sk-real-openai-key-..." # Real key (read from env, not stored in file)
+    api_key_env: "OPENAI_API_KEY"      # Real key read from env var at launch — NEVER stored in file
   anthropic:
     base_url: "https://api.anthropic.com"
-    api_key: "sk-ant-real-key-..."
+    api_key_env: "ANTHROPIC_API_KEY"   # Real key read from env var at launch — NEVER stored in file
 ```
+
+**Note:** Real API keys are passed to the proxy subprocess via environment variables (see `create_proxy()` env dict). The config YAML only references env var names, never plaintext keys. The Go binary reads the key at startup from the referenced env var.
 
 **Proxy request flow:**
 ```
@@ -125,12 +135,17 @@ upstreams:
 3. Validate: source_ip == config.vm_ip → reject if not
 4. Extract Authorization header
 5. Validate: header == config.dummy_key → reject if not
-6. Determine upstream from request path (e.g., /v1/* → openai)
-7. Replace Authorization header with real API key from config
+6. Determine upstream from request path prefix:
+   - /v1/chat/completions, /v1/embeddings, /v1/models → openai
+   - /v1/messages → anthropic
+   - Default: first configured upstream
+7. Replace Authorization header with real API key (read from env at startup)
 8. Forward request to upstream.base_url + request path
 9. Stream response back to VM
 10. Log: timestamp, method, path, status, model (from request body), token counts (from response), duration
 ```
+
+**Provider routing model:** One proxy process per session. Each proxy supports multiple upstream providers simultaneously via path-based routing. The provider is determined by the request path prefix (step 6). Cloud-init injects a single `PROXY_BASE_URL` (e.g., `http://10.0.0.1:23760`) — the agent inside the VM uses this single endpoint for all providers. The proxy handles dispatching to the correct upstream based on the request path.
 
 ### 3.3 Dependencies
 
@@ -247,13 +262,17 @@ The Go binary is hardened at build time and runtime:
 - No `os/exec`, no `syscall.Exec` — the binary cannot spawn subprocesses
 
 **Runtime (configured via systemd or subprocess launch):**
-- `User=agentvm-proxy` — dedicated non-root UID
-- `CapabilityBoundingSet=` — drop all capabilities
-- `NoNewPrivileges=yes`
+- `User=agentvm-proxy` — dedicated non-root UID (created during package install)
+- `CapabilityBoundingSet=` — drop all capabilities (MUST be empty)
+- `NoNewPrivileges=yes` — prevent privilege escalation
 - `ProtectSystem=strict` — read-only filesystem; proxy config dir mounted read-only (config read at startup, no writes needed at runtime)
-- `PrivateTmp=yes`
+- `PrivateTmp=yes` — isolated /tmp
 - `RestrictAddressFamilies=AF_INET AF_INET6` — only allow IPv4/IPv6 socket calls
 - `SystemCallFilter=@system-service` — minimal seccomp allowlist
+- `MemoryMax=64M` — hard memory limit for proxy process
+- `TasksMax=10` — prevent fork bombs
+
+**Hardening enforcement:** The Python `create_proxy()` method MUST apply these hardening settings when launching the proxy subprocess. If running via systemd, use `systemd-run` with the above properties. If running via `subprocess.Popen`, apply `preexec_fn` with `setuid()`, `setgid()`, `resource.setrlimit()`. The daemon startup must verify the `agentvm-proxy` user exists and create it if missing.
 
 ## 6. Error Handling
 

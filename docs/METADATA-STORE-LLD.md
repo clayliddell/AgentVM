@@ -76,7 +76,16 @@ class MetadataStore:
         """List sessions with optional filters."""
 
     async def delete_session(self, session_id: str) -> None:
-        """Delete session and all related records (cascade)."""
+        """Delete session and all related records. Cascade is application-enforced:
+        1. DELETE FROM vms WHERE session_id = ?
+        2. DELETE FROM proxies WHERE session_id = ?
+        3. DELETE FROM shared_folders WHERE session_id = ?
+        4. DELETE FROM resource_allocations WHERE vm_id IN (SELECT id FROM vms WHERE session_id = ?)
+        5. DELETE FROM network_rules WHERE session_id = ?
+        6. DELETE FROM sessions WHERE id = ?
+        Audit log entries are NOT deleted (append-only for compliance).
+        Note: SQLite foreign keys are NOT used for cascade — this is application-level deletion
+        to ensure deterministic ordering and avoid FK constraint issues during partial state."""
 
     async def get_sessions_by_status_and_age(self, status: str,
                                               older_than: str) -> list[dict]:
