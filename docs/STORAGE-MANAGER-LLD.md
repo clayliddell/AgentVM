@@ -223,7 +223,7 @@ class StorageManager:
 **User Stories & Tasks:**
 
 * **Story:** As a platform operator, the correct shared folder driver is selected based on QEMU capabilities.
-  * **Task:** Implement driver selection logic — query QEMU version via subprocess `qemu-system-x86_64 --version` or parse libvirt capabilities XML. If QEMU ≥6.0 and virtiofsd is available, select `virtiofs`. Otherwise, fall back to `9p` with `accessmode='mapped'`. Store selection in config or return to caller.
+  * **Task:** Implement `StorageManager.get_shared_folder_driver()` — query QEMU version via subprocess `qemu-system-x86_64 --version` or parse libvirt capabilities XML. If QEMU ≥6.0 and virtiofsd is available, return `"virtiofs"`. Otherwise, return `"9p"`. This is the single source of truth for driver selection — VM Manager consumes this value for XML generation.
     * *Identified Blockers/Dependencies:* QEMU must be installed for version detection.
 
 ---

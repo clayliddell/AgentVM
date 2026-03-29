@@ -99,6 +99,8 @@ Orchestrator:
 ### 3.2 Pydantic Schemas
 
 ```python
+from enum import Enum
+
 # Request schemas
 class SessionCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
@@ -136,8 +138,19 @@ class SessionResponse(BaseModel):
     created_at: str
     metadata: dict
 
+class ErrorCode(str, Enum):
+    unauthorized = "unauthorized"
+    forbidden = "forbidden"
+    not_found = "not_found"
+    invalid_spec = "invalid_spec"
+    validation_error = "validation_error"
+    name_conflict = "name_conflict"
+    capacity_exceeded = "capacity_exceeded"
+    image_incompatible = "image_incompatible"
+    internal_error = "internal_error"
+
 class ErrorResponse(BaseModel):
-    error: str
+    error: ErrorCode
     detail: str
 ```
 

@@ -64,6 +64,7 @@ class SessionCreateRequest:
 
 @dataclass
 class SharedFolderConfig:
+    """Shared folder configuration. Used by Session Manager, Orchestrator Adapter, and REST API."""
     project_path: str                  # Host path to project source
     output_path: str                   # Host path for VM output
     permissions: str = "rw"            # "rw" | "ro"
@@ -182,8 +183,8 @@ class WorkloadSession:
     2. Check host capacity via Host Manager.
     3. Transition session state to `creating`, persist to metadata store.
     4. Create shared folder directory via Storage Manager.
-    5. Start auth proxy via Auth Proxy Manager.
-    6. Generate cloud-init ISO via Storage Manager (injecting SSH key, proxy config, shared folder config).
+    5. Generate cloud-init ISO via Storage Manager (injecting SSH key, shared folder config).
+    6. Start auth proxy via Auth Proxy Manager (needs VM IP for validation; proxy port/key injected into cloud-init in prior step).
     7. Apply network rules via Network Manager.
     8. Create VM via VM Manager.
     9. Transition to `running`, update metadata.
@@ -212,6 +213,10 @@ class WorkloadSession:
 * **Story:** As a developer, I have unit tests for session lifecycle and state machine.
   * **Task:** Implement `test_session.py` — test state machine transitions (valid and invalid), mock all sub-components and verify the create/destroy orchestration sequence, test rollback on partial failure.
     * *Identified Blockers/Dependencies:* Mock implementations of all sub-components.
+
+* **Story:** As a platform operator, session ownership is enforced so only the owning API key or orchestrator session can manage its sessions.
+  * **Task:** Implement ownership enforcement in all Session Manager methods (`get_session`, `destroy_session`, `shutdown_session`, `resume_session`, `get_ssh_info`) — accept `owner` parameter, verify `session.owner == owner` before proceeding. Raise `ForbiddenError` on mismatch. `list_sessions(owner)` already filters by owner.
+    * *Identified Blockers/Dependencies:* REST API auth must extract owner identity from Bearer token and pass it through.
 
 ---
 
@@ -257,25 +262,25 @@ create_session() rollback sequence (if step N fails):
   Step 4 failed (shared folder):
     → Purge metadata record
   
-  Step 5 failed (proxy):
+  Step 5 failed (cloud-init):
     → Remove shared folder directory
     → Purge metadata record
 
-  Step 6 failed (cloud-init):
-    → Stop proxy
+  Step 6 failed (proxy):
+    → Delete cloud-init ISO
     → Remove shared folder directory
     → Purge metadata record
 
   Step 7 failed (network):
-    → Delete cloud-init ISO
     → Stop proxy
+    → Delete cloud-init ISO
     → Remove shared folder directory
     → Purge metadata record
 
   Step 8 failed (VM):
     → Clean network rules
-    → Delete cloud-init ISO
     → Stop proxy
+    → Delete cloud-init ISO
     → Remove shared folder directory
     → Purge metadata record
 
@@ -286,7 +291,7 @@ create_session() rollback sequence (if step N fails):
 |---|---|
 | Base image not found | Reject before provisioning starts, no rollback needed |
 | Insufficient capacity | Reject before provisioning starts, no rollback needed |
-| Proxy port exhausted | Rollback to step 4, raise error |
-| Cloud-init generation failure | Rollback to step 5, raise error |
+| Cloud-init generation failure | Rollback to step 4, raise error |
+| Proxy port exhausted | Rollback to step 5, raise error |
 | VM boot timeout | Full rollback, raise error |
 | Partial rollback failure | Log error, emit `session.error`, leave orphan marker in metadata for manual cleanup |

@@ -187,12 +187,12 @@ class SSHInfo:
     * *Identified Blockers/Dependencies:* `VMSpec` dataclass must be defined (`spec.py`).
 
 * **Story:** As a developer, I can create a qcow2 COW overlay from a base image.
-  * **Task:** Implement `disks.py` — `create_disk_overlay(base_image_path, vm_id, size_gb)` using `qemu-img create -f qcow2 -F qcow2 -b <base> <overlay> <size>`. Create VM directory under `/var/lib/agentvm/vms/vm-<uuid>/`.
-    * *Identified Blockers/Dependencies:* Config must provide `storage.base_images_dir` and `storage.vm_data_dir`.
+  * **Task:** Delegate disk overlay creation to Storage Manager — VM Manager calls `StorageManager.create_disk_overlay(base_image, vm_id, size_gb)` during `create_vm()`. VM Manager does not own disk overlay logic.
+    * *Identified Blockers/Dependencies:* Storage Manager `disks.py` implementation.
 
 * **Story:** As a developer, I can create and destroy a VM through Python code.
-  * **Task:** Implement `VMManager.create_vm()` — validate spec, check capacity, create disk overlay, generate XML, call `conn.createXML()`, wait for boot (poll domain state or SSH probe), record metadata to SQLite, return `VMConnectionInfo`.
-    * *Identified Blockers/Dependencies:* `xml_builder.py`, `disks.py`, Metadata Store (sessions + vms tables), Host Manager (`capacity.py`), Network Manager (bridge must exist).
+  * **Task:** Implement `VMManager.create_vm()` — validate spec, check capacity, create disk overlay via `StorageManager.create_disk_overlay()`, generate XML, call `conn.createXML()`, wait for boot (poll domain state or SSH probe), record metadata to SQLite, return `VMConnectionInfo`.
+    * *Identified Blockers/Dependencies:* `xml_builder.py`, Storage Manager (`disks.py`), Metadata Store (sessions + vms tables), Host Manager (`capacity.py`), Network Manager (bridge must exist).
   * **Task:** Implement `VMManager.destroy_vm()` — `domain.destroy()` (hard kill), `domain.undefine()`, delete disk overlay, purge metadata from SQLite.
     * *Identified Blockers/Dependencies:* `create_vm()` must be functional first.
   * **Task:** Implement `VMManager.get_vm_status()` — read domain state from libvirt, read cgroup usage, return `VMStatus`.
@@ -233,8 +233,8 @@ class SSHInfo:
     * *Identified Blockers/Dependencies:* Host Manager `cpu_map.py` must provide topology.
 
 * **Story:** As a platform operator, the shared folder mount in the VM XML uses the correct driver (virtiofs or 9p fallback).
-  * **Task:** Implement driver selection logic: if QEMU version ≥6.0, use `virtiofs` (requires `<driver type='virtiofs'/>` and a virtiofsd process); else fall back to `9p` with `accessmode='mapped'`. Check QEMU version via `qemu-system-x86_64 --version` or libvirt capabilities XML.
-    * *Identified Blockers/Dependencies:* Shared folder host path must be created by Storage Manager.
+  * **Task:** VM Manager consumes the driver type selected by Storage Manager (via `StorageManager.get_shared_folder_driver()`) and applies it to the VM XML generation. VM Manager does not own driver selection logic — it only generates the corresponding `<filesystem>` XML element.
+    * *Identified Blockers/Dependencies:* Storage Manager driver selection implementation.
 
 ---
 

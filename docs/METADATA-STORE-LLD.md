@@ -92,6 +92,9 @@ class MetadataStore:
     async def get_vm_by_session(self, session_id: str) -> Optional[dict]:
         """Retrieve VM for a session."""
 
+    async def get_vms_by_image(self, base_image: str) -> list[dict]:
+        """Retrieve all VMs referencing a given base image (for image deletion guard)."""
+
     async def update_vm(self, vm_id: str, updates: dict) -> None:
         """Update VM fields."""
 

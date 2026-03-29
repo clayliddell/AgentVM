@@ -70,12 +70,12 @@ class NetworkPolicyEngine:
         """Remove all iptables/ipset/tc rules for a session."""
 
     def allow_domain(self, session_id: str, domain: str,
-                     port: Optional[int] = None) -> list[str]:
-        """Resolve domain, add IPs to allowlist (strict) or remove from blocklist (restricted). Returns resolved IPs."""
+                     port: Optional[int] = None) -> None:
+        """Resolve domain, add IPs to allowlist (strict) or remove from blocklist (restricted)."""
 
     def block_domain(self, session_id: str, domain: str,
-                     port: Optional[int] = None) -> list[str]:
-        """Resolve domain, add IPs to blocklist (restricted) or remove from allowlist (strict). Returns resolved IPs."""
+                     port: Optional[int] = None) -> None:
+        """Resolve domain, add IPs to blocklist (restricted) or remove from allowlist (strict)."""
 
     def reset_network(self, session_id: str) -> None:
         """Flush session ipsets to startup defaults."""
@@ -181,6 +181,14 @@ class RateLimiter:
 * **Story:** As a platform operator, I can query current network rules for a session.
   * **Task:** Implement `get_rules()` — read from `network_rules` metadata table where `removed_at IS NULL`, return `list[NetworkRule]`.
     * *Identified Blockers/Dependencies:* Metadata store.
+
+* **Story:** As a platform operator, DNS resolution per session is filtered according to network policy mode via dnsmasq.
+  * **Task:** Implement dnsmasq domain filtering (NET-FR-13) — generate per-session dnsmasq config under `/var/lib/agentvm/net/<session-id>.conf`:
+    - **Strict mode**: `server=/<domain>/<resolver>` entries only for allowlisted domains; all other DNS queries return NXDOMAIN.
+    - **Restricted mode**: `address=/<domain>/0.0.0.0` entries for blocklisted domains; all other queries pass through.
+    - **Permissive mode**: no dnsmasq filtering, forward all to upstream resolver.
+    Reload dnsmasq (`killall -HUP dnsmasq`) after config changes.
+    * *Identified Blockers/Dependencies:* dnsmasq must be installed and configured per HLD Section 5.3.
 
 * **Story:** As a platform operator, VM bandwidth is rate-limited.
   * **Task:** Implement `RateLimiter.apply_rate_limit()` — `tc qdisc add dev <vnet> root tbf rate <mbps>mbit burst 32kbit latency 400ms`.

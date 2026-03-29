@@ -170,14 +170,12 @@ class AgentVMBackend:
                  network_engine: NetworkPolicyEngine,
                  proxy_manager: AuthProxyManager,
                  storage_manager: StorageManager,
-                 host_manager: HostManager,
-                 image_manager: ImageManager):
+                 host_manager: HostManager):
         self.session_manager = session_manager
         self.network_engine = network_engine
         self.proxy_manager = proxy_manager
         self.storage_manager = storage_manager
         self.host_manager = host_manager
-        self.image_manager = image_manager
 
     def create_session(self, spec: WorkloadSpec) -> SessionStatus:
         """Convert WorkloadSpec → SessionCreateRequest, delegate to SessionManager, convert result."""

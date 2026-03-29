@@ -192,6 +192,8 @@ class HardeningChecker:
 * **Story:** As a developer, I can check if a requested VM spec fits within host capacity.
   * **Task:** Implement `capacity.py` — `get_capacity()` reads `/proc/cpuinfo` (core count minus reserved), `/proc/meminfo` (total minus reserved minus allocated), `os.statvfs()` (disk). `check_spec()` compares requested against available. Track allocations in-memory.
     * *Identified Blockers/Dependencies:* Config (reserved resources).
+  * **Task:** Implement `reconcile_allocations()` — called on daemon startup. Queries metadata store for all active VMs, rebuilds in-memory allocation state from their resource records. Ensures capacity tracking is correct after a daemon restart where in-memory state was lost.
+    * *Identified Blockers/Dependencies:* Metadata store must be initialized, `get_vms()` with status filter.
 
 ---
 

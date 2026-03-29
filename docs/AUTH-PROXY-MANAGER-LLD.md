@@ -250,7 +250,7 @@ The Go binary is hardened at build time and runtime:
 - `User=agentvm-proxy` — dedicated non-root UID
 - `CapabilityBoundingSet=` — drop all capabilities
 - `NoNewPrivileges=yes`
-- `ProtectSystem=strict` — read-only filesystem except config dir
+- `ProtectSystem=strict` — read-only filesystem; proxy config dir mounted read-only (config read at startup, no writes needed at runtime)
 - `PrivateTmp=yes`
 - `RestrictAddressFamilies=AF_INET AF_INET6` — only allow IPv4/IPv6 socket calls
 - `SystemCallFilter=@system-service` — minimal seccomp allowlist
