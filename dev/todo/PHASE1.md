@@ -40,9 +40,9 @@
 
 | Task Name | Task Description | Priority | Status |
 |-----------|-----------------|----------|--------|
-| HostManager.cpu_map | Implement `cpu_map.py` — read `/sys/devices/system/cpu/cpu*/topology/` for core relationships, NUMA layout, nested virt detection. Ref: HOST-LLD §5.1 | Medium | Ready for Work |
-| HostManager.capacity | Implement `capacity.py` — `get_capacity()` reads `/proc/cpuinfo`, `/proc/meminfo`, `os.statvfs()`. `check_spec()` compares requested against available. Track allocations in-memory. Ref: HOST-LLD §5.2 | High | Ready for Work |
-| HostManager.reconcile_allocations | Implement `reconcile_allocations()` — called on daemon startup. Queries metadata store for all active VMs, rebuilds in-memory allocation state. Ref: HOST-LLD §5.2 | High | Ready for Work |
+| HostManager.cpu_map | Implement `cpu_map.py` — read `/sys/devices/system/cpu/cpu*/topology/` for core relationships, NUMA layout, nested virt detection. Ref: HOST-LLD §5.1 | Medium | Ready for Review |
+| HostManager.capacity | Implement `capacity.py` — `get_capacity()` reads `/proc/cpuinfo`, `/proc/meminfo`, `os.statvfs()`. `check_spec()` compares requested against available. Track allocations in-memory. Ref: HOST-LLD §5.2 | High | Ready for Review |
+| HostManager.reconcile_allocations | Implement `reconcile_allocations()` — called on daemon startup. Queries metadata store for all active VMs, rebuilds in-memory allocation state. Ref: HOST-LLD §5.2 | High | Ready for Review |
 
 ## Storage Manager
 
@@ -59,8 +59,8 @@
 
 | Task Name | Task Description | Priority | Status |
 |-----------|-----------------|----------|--------|
-| Config.load_config | Implement `config.py` — `AgentVMConfig.load(config_path)`: determine config path, load YAML with `pyyaml`, apply env var overrides, construct dataclass, call `validate()`. Ref: CONFIG-LLD §5.1 | High | Ready for Work |
-| Config.test_config | Implement config tests — test loading, validation, env var overrides. Ref: CONFIG-LLD §5.2 | Medium | Ready for Work |
+| Config.load_config | Implement `config.py` — `AgentVMConfig.load(config_path)`: determine config path, load YAML with `pyyaml`, apply env var overrides, construct dataclass, call `validate()`. Ref: CONFIG-LLD §5.1 | High | Ready for Review |
+| Config.test_config | Implement config tests — test loading, validation, env var overrides. Ref: CONFIG-LLD §5.2 | Medium | Ready for Review |
 
 ## Daemon Entrypoint
 
