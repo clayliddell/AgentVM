@@ -5,7 +5,9 @@ Ref: DAEMON-ENTRYPOINT-LLD §3, §5.2
 
 from __future__ import annotations
 
+import asyncio
 import signal
+import threading
 from dataclasses import dataclass
 from types import FrameType
 
@@ -38,23 +40,23 @@ class _DaemonState:
     session_manager: SessionManager | None = None
     metrics: MetricsCollector | None = None
     store: MetadataStore | None = None
-    shutting_down: bool = False
+    shutting_down: threading.Event = threading.Event()
 
 
 _state = _DaemonState()
 
 
-def graceful_shutdown(signum: int, frame: FrameType | None) -> None:
-    """Handle SIGTERM/SIGINT — stop API server, drain sessions, close store.
+async def _async_graceful_shutdown() -> None:
+    """Async graceful shutdown to be called from the event loop.
 
     Ref: DAEMON-ENTRYPOINT-LLD §3 (shutdown sequence), §5.2
     """
-    if _state.shutting_down:
-        logger.warning("shutdown_already_in_progress", signal=signum)
+    if _state.shutting_down.is_set():
+        logger.warning("shutdown_already_in_progress")
         return
 
-    _state.shutting_down = True
-    logger.info("shutdown_signal_received", signal=signum)
+    _state.shutting_down.set()
+    logger.info("daemon_shutdown_started")
 
     # 1. Stop accepting new API requests
     #    Ref: DAEMON-ENTRYPOINT-LLD §3 step 1
@@ -71,25 +73,40 @@ def graceful_shutdown(signum: int, frame: FrameType | None) -> None:
     if _state.metrics is not None:
         _state.metrics.stop_exporter()
 
+    # 4. Close metadata store
+    #    Ref: DAEMON-ENTRYPOINT-LLD §3 step 4
+    if _state.store is not None:
+        await _state.store.close()
+
     logger.info("daemon_shutdown_complete")
 
 
-async def _close_store() -> None:
-    """Close metadata store connection asynchronously.
+def _signal_handler(signum: int, frame: FrameType | None) -> None:
+    """Signal handler that delegates to async shutdown in event loop.
 
-    Ref: DAEMON-ENTRYPOINT-LLD §3 step 4
+    Uses wakeup fd to unblock the event loop, then schedules async shutdown.
     """
-    if _state.store is not None:
-        await _state.store.close()
+    if _state.shutting_down.is_set():
+        return
+
+    logger.info("shutdown_signal_received", signal=signum)
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.call_soon(lambda: asyncio.create_task(_async_graceful_shutdown()))
+    except RuntimeError:
+        pass
 
 
 def register_signal_handlers() -> None:
     """Register SIGTERM and SIGINT handlers for graceful shutdown.
 
+    Uses signal handlers that delegate to the event loop to avoid blocking.
+
     Ref: DAEMON-ENTRYPOINT-LLD §3 step 15
     """
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-    signal.signal(signal.SIGINT, graceful_shutdown)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
 
 
 async def run_daemon(config: AgentVMConfig) -> None:
@@ -131,10 +148,4 @@ async def run_daemon(config: AgentVMConfig) -> None:
     )
 
     # Run server (blocks until should_exit is set)
-    server = _state.server
-    assert server is not None
-    await server.serve()
-
-    # After server stops, close store asynchronously
-    # Ref: DAEMON-ENTRYPOINT-LLD §3 step 4
-    await _close_store()
+    await _state.server.serve()
