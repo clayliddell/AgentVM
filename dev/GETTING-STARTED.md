@@ -1,4 +1,4 @@
-# AGENTS.md
+# Getting Started
 
 ## Goal
 
@@ -8,18 +8,43 @@ The ultimate goal: enable AI coding agents to operate in fully isolated, resourc
 
 ## Getting Started
 
-### 1. Prerequisites
+### 1. First-Time Setup
 
-Install the following on your development host:
+Run the automated setup script from the repository root. It installs system packages, creates the Python venv, builds the Go proxy, and configures libvirtd. See [SETUP.md](SETUP.md) for full details.
+
+```bash
+git clone <repo-url> agentvm
+cd agentvm
+./dev/setup.sh
+```
+
+After setup completes, a `.env` file is created with `AGENTVM_ENV_SETUP_DONE=true`. This file is gitignored and signals to subsequent agent sessions that the environment is ready.
+
+### 2. Every Session — Activate Environment
+
+At the start of **every** working session (including AI agent sessions):
+
+```bash
+source .venv/bin/activate
+source .env
+```
+
+Check `AGENTVM_ENV_SETUP_DONE` in `.env`:
+- If `false` (or missing), run `./dev/setup.sh` first.
+- If `true`, the environment is ready — proceed to development.
+
+### 3. Manual Setup (Alternative)
+
+If `setup.sh` is not available or you prefer manual steps:
 
 ```bash
 # System packages (Ubuntu/Debian)
 sudo apt-get install -y \
-    qemu-kvm libvirt-daemon-system libvirt-clients \
-    dnsmasq iptables cgroup-tools \
+    qemu-kvm libvirt-daemon-system libvirt-clients libvirt-dev \
+    dnsmasq iptables cgroup-tools pkg-config \
     python3.12 python3.12-venv python3-pip \
     golang-1.22 \
-    git make
+    git make genisoimage
 
 # Verify nested KVM support
 cat /sys/module/kvm_intel/parameters/nested  # or kvm_amd
@@ -27,13 +52,6 @@ cat /sys/module/kvm_intel/parameters/nested  # or kvm_amd
 
 # Verify /dev/kvm exists
 ls -la /dev/kvm
-```
-
-### 2. Clone & Bootstrap
-
-```bash
-git clone <repo-url> agentvm
-cd agentvm
 
 # Create virtual environment
 python3.12 -m venv .venv
@@ -52,7 +70,7 @@ cd proxy && make && cd ..
 python -c "import libvirt; conn = libvirt.open('qemu:///system'); print(conn.getVersion())"
 ```
 
-### 3. Project Structure
+### 4. Project Structure
 
 ```
 agentvm/
@@ -80,18 +98,24 @@ agentvm/
 │   ├── integration/            # Cross-component contract tests
 │   └── e2e/                    # Full workflow tests
 ├── docs/
-│   ├── CODE-STANDARD.md        # Code quality standards
 │   ├── designs/
 │   │   ├── HLD.md              # High-Level Design
 │   │   └── *-LLD.md            # Low-Level Designs per component
 │   └── adr/                    # Architecture Decision Records
-├── todo/
-│   ├── todo.md                 # Kanban guide
-│   └── PHASE1.md .. PHASE7.md  # Task boards per phase
-└── AGENTS.md                   # This file
+├── dev/
+│   ├── CODE-STANDARD.md        # Code quality standards
+│   ├── todo/
+│   │   ├── todo.md             # Kanban guide
+│   │   └── PHASE1..PHASE7.md   # Task boards per phase
+│   ├── setup.sh                # Automated dev environment setup
+│   ├── SETUP.md                # Setup documentation
+│   └── GETTING-STARTED.md      # This file
+├── .venv/                      # Python virtual environment (gitignored)
+├── .env                        # Session env marker (gitignored)
+└── README.md                   # Project overview
 ```
 
-### 4. Running Tests
+### 5. Running Tests
 
 ```bash
 # All unit tests with coverage
@@ -112,15 +136,20 @@ ruff format --check src/
 mypy src/ --strict
 ```
 
-### 5. Development Workflow
+### 6. Development Workflow
 
-Before starting, read [CODE-STANDARD.md](docs/CODE-STANDARD.md), [todo.md](todo/todo.md), and the `todo/PHASE#.md` file corresponding to whichever phase your working on.
+Before starting, read [CODE-STANDARD.md](CODE-STANDARD.md), [todo.md](todo/todo.md), and the `todo/PHASE#.md` file corresponding to whichever phase your working on. Make sure you have sourced your environment:
 
-1. **Pick a task** from the current phase board in `todo/PHASE<N>.md`.
+```bash
+source .venv/bin/activate
+source .env
+```
+
+1. **Pick a task** from the current phase board in `dev/todo/PHASE<N>.md`.
 2. **Update status** to `In Progress` in `main` branch (no need to push).
 3. **Checkout a new Branch** - Checkout a new branch in git for tracking your progress. You'll later use this branch to create a PR for your work.
 3. **Read the LLD** — every task references its LLD section. Read it before writing code.
-4. **Write a failing test first** (TDD). See [CODE-STANDARD.md](docs/CODE-STANDARD.md) §4.
+4. **Write a failing test first** (TDD). See [CODE-STANDARD.md](CODE-STANDARD.md) §4.
 5. **Implement the minimum** to make the test pass.
 6. **Refactor** while keeping tests green.
 7. **Run the full check suite:**
@@ -128,9 +157,37 @@ Before starting, read [CODE-STANDARD.md](docs/CODE-STANDARD.md), [todo.md](todo/
    ruff check src/ && ruff format --check src/ && mypy src/ --strict && pytest tests/unit/ --cov-fail-under=95
    ```
 8. **Update task status** to `Ready for Review` in `main` branch (no need to push).
-9. **Submit PR.** CI must pass all gates before merge.
+9. **Submit PR.** CI must pass all gates before merge. Create a PR with `gh`:
 
-### 6. Key Conventions
+```bash
+# Create a PR with a title and body
+gh pr create --title "your PR title" --body "$(cat <<'EOF'
+## Summary
+<1-3 bullet points describing what this PR does>
+
+## Changes
+- List specific changes made
+- Reference any relevant LLD sections or issue numbers
+
+## Testing
+- Describe how the changes were tested
+- Note any new tests added
+EOF
+)"
+```
+
+You can also create a PR interactively:
+```bash
+gh pr create
+```
+This will prompt you for a title and body.
+
+To view your PR after creation:
+```bash
+gh pr view
+```
+
+### 7. Key Conventions
 
 - **Docstrings:** Every public function must have a Google-style docstring with a `Ref:` line pointing to the LLD section.
 - **Types:** All functions must have complete type annotations. `mypy --strict` is enforced.
@@ -138,7 +195,7 @@ Before starting, read [CODE-STANDARD.md](docs/CODE-STANDARD.md), [todo.md](todo/
 - **No hardcoded secrets:** Environment variables only.
 - **Component isolation:** Components only interact through defined interfaces. No direct cross-component imports — use dependency injection via `daemon.py`.
 
-### 7. Configuration
+### 8. Configuration
 
 The daemon loads config from YAML. Default path: `/etc/agentvm/config.yaml`. Override with `AGENTVM_CONFIG` env var.
 
@@ -149,7 +206,7 @@ See `docs/designs/CONFIG-LLD.md` for schema. Key sections:
 - `security` — VM max lifetime, resource defaults
 - `logging` — level, format
 
-### 8. Daemon
+### 9. Daemon
 
 Start the daemon:
 
@@ -167,7 +224,7 @@ sudo journalctl -u agentvm -f
 
 **Note:** The systemd unit must include `Delegate=yes` for cgroup v2 delegation. See [HOST-MANAGER-LLD](docs/designs/HOST-MANAGER-LLD.md) §5.1.
 
-### 9. Common Tasks
+### 10. Common Tasks
 
 ```bash
 # Create a session via CLI
@@ -189,7 +246,7 @@ agentvm audit --session <session-id>
 agentvm host capacity
 ```
 
-### 10. Troubleshooting
+### 11. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
@@ -199,10 +256,11 @@ agentvm host capacity
 | `cgroup v2 not writable` | Verify `Delegate=yes` in systemd unit and cgroup v2 mount: `mount | grep cgroup2` |
 | `dnsmasq port conflict` | Disable system dnsmasq: `sudo systemctl disable dnsmasq` |
 | `Mutation score below 90%` | Run `mutmut results` and fix surviving mutants or document intentional ones |
+| `AGENTVM_ENV_SETUP_DONE=false` | Run `./dev/setup.sh` then `source .env`. See [SETUP.md](SETUP.md). |
 
-### 11. Where to Ask Questions
+### 12. Where to Ask Questions
 
 - Check the LLD for the relevant component first.
 - Check `docs/designs/HLD.md` for architecture overview.
 - If the LLD contradicts the HLD, the HLD is authoritative. File an ADR.
-- For process questions, see `todo/todo.md` for Kanban guidance.
+- For process questions, see `dev/todo/todo.md` for Kanban guidance.
