@@ -107,8 +107,8 @@ agentvm/
 ├── dev/
 │   ├── CODE-STANDARD.md        # Code quality standards
 │   ├── todo/
-│   │   ├── todo.md             # Kanban guide
-│   │   └── PHASE1..PHASE7.md   # Task boards per phase
+│   │   ├── todo.md             # Kanban guide (references VibeKanban)
+│   │   └── PHASE1..PHASE7.md   # Phase requirements, FRs, E2E tests
 │   ├── setup.sh                # Automated dev environment setup
 │   ├── SETUP.md                # Setup documentation
 │   └── GETTING-STARTED.md      # This file
@@ -140,20 +140,20 @@ mypy src/ --strict
 
 ### 6. Development Workflow
 
-Before starting, read [CODE-STANDARD.md](CODE-STANDARD.md), [todo.md](todo/todo.md), and the `todo/PHASE#.md` file corresponding to whichever phase your working on. Make sure you have sourced your environment:
+Before starting, read [CODE-STANDARD.md](CODE-STANDARD.md), [todo.md](todo/todo.md), and the `todo/PHASE#.md` file for your current phase. Task tracking lives on the **VibeKanban board** (see [todo.md](todo/todo.md) for details). The phase files define requirements, FRs, and E2E tests — do not edit task status in the phase files.
 
 ```bash
 source .venv/bin/activate
 source .env
 ```
 
-1. **Pick a task** from the current phase board in `dev/todo/PHASE<N>.md`.
+1. **Pick a task** from the VibeKanban board. Look for tasks with no blockers in "To Do" status.
 2. **Start from latest `main`** — switch to `main` and pull before starting any work:
    ```bash
    git checkout main
    git pull --ff-only
    ```
-3. **Update status** to `In Progress` in `main` branch (no need to push).
+3. **Update status** on VibeKanban to `In Progress` (assign the issue to yourself).
 4. **Checkout a new branch** — create a branch for your task work. You'll use this branch to open your PR.
 5. **Read the LLD** — every task references its LLD section. Read it before writing code.
 6. **Write a failing test first** (TDD). See [CODE-STANDARD.md](CODE-STANDARD.md) §4.
@@ -163,7 +163,7 @@ source .env
    ```bash
    ruff check src/ && ruff format --check src/ && mypy src/ --strict && pytest tests/unit/ --cov-fail-under=95
    ```
-10. **Update task status** to `Ready for Review` in `main` branch (no need to push).
+10. **Update status** on VibeKanban to `Ready for Review`.
 11. **Submit PR.** CI must pass all gates before merge. Create a PR with `gh`:
 
 ```bash
