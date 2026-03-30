@@ -20,6 +20,14 @@ cd agentvm
 ./dev/setup.sh
 ```
 
+For container environments or machines without KVM support, use the lightweight mode:
+
+```bash
+./dev/setup.sh --dev-only
+```
+
+This sets up only the Python venv and pre-commit hooks — sufficient for writing code, running linters, and executing unit/integration tests.
+
 After setup completes, a `.env` file is created with `AGENTVM_ENV_SETUP_DONE=true`. This file is gitignored and signals to subsequent agent sessions that the environment is ready.
 
 ### 2. Every Session — Activate Environment

@@ -5,14 +5,13 @@ Ref: CONFIG-LLD Section 5
 
 from __future__ import annotations
 
+import ipaddress
+import os
 from dataclasses import MISSING, Field, dataclass, field, fields
 from pathlib import Path
 from typing import Any, get_args, get_origin, get_type_hints
-import ipaddress
-import os
 
-import yaml  # type: ignore[import-untyped]
-
+import yaml
 
 DEFAULT_CONFIG_PATH = "/etc/agentvm/agentvm.yaml"
 
