@@ -5,13 +5,15 @@ Ref: STORAGE-MANAGER-LLD Section 5.3
 
 from __future__ import annotations
 
-import shutil
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 
-@dataclass
+
+@dataclass(frozen=True)
 class CloudInitConfig:
     """Configuration for cloud-init ISO generation.
 
@@ -24,6 +26,7 @@ class CloudInitConfig:
     proxy_dummy_key: str
     shared_folder_mount: str
     network_gateway: str
+    network_address: str
     dns_servers: list[str]
 
 
@@ -92,34 +95,40 @@ class CloudInitManager:
 
         iso_path = self._iso_path(vm_id)
 
-        if not shutil.which("genisoimage"):
+        try:
+            subprocess.run(  # noqa: S603
+                [  # noqa: S607
+                    "genisoimage",
+                    "-output",
+                    str(iso_path),
+                    "-volid",
+                    "cidata",
+                    "-joliet",
+                    "-rock",
+                    str(user_data_path),
+                    str(meta_data_path),
+                ],
+                check=True,
+                capture_output=True,
+            )
+        except FileNotFoundError as exc:
             raise DependencyError(
                 "genisoimage is not installed. "
                 "Install it with: apt-get install genisoimage"
-            )
-
-        subprocess.run(  # noqa: S603, S607
-            [  # noqa: S607
-                "genisoimage",
-                "-output",
-                str(iso_path),
-                "-volid",
-                "cidata",
-                "-joliet",
-                "-rock",
-                str(user_data_path),
-                str(meta_data_path),
-            ],
-            check=True,
-            capture_output=True,
-        )
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            stderr = exc.stderr.decode(errors="replace") if exc.stderr else ""
+            raise OSError(
+                f"genisoimage failed (exit {exc.returncode}): {stderr}"
+            ) from exc
 
         return str(iso_path)
 
     def delete_cloud_init_iso(self, vm_id: str) -> None:
-        """Delete the cloud-init ISO for a VM.
+        """Delete the cloud-init ISO and intermediate files for a VM.
 
-        Idempotent: does not raise if the ISO does not exist.
+        Removes the ISO, user-data, and meta-data files. Idempotent:
+        does not raise if files do not exist.
 
         Args:
             vm_id: Unique VM identifier.
@@ -130,60 +139,69 @@ class CloudInitManager:
         Ref: STORAGE-MANAGER-LLD Section 5.4
         """
 
-        iso_path = self._iso_path(vm_id)
-        if iso_path.exists():
-            iso_path.unlink()
+        vm_dir = self._vm_dir(vm_id)
+        for name in ("cloud-init.iso", "user-data", "meta-data"):
+            path = vm_dir / name
+            if path.exists():
+                path.unlink()
 
     def _build_user_data(self, config: CloudInitConfig) -> str:
-        """Build cloud-init user-data content."""
+        """Build cloud-init user-data content.
 
-        dns_list = ", ".join(f"{ip}" for ip in config.dns_servers)
+        Uses yaml.safe_dump to serialize values, preventing injection
+        via YAML metacharacters in user-provided strings.
+        """
 
-        return (  # noqa: UP032
-            "#cloud-config\n"
-            "hostname: {hostname}\n"
-            "ssh_authorized_keys:\n"
-            "  - {ssh_key}\n"
-            "write_files:\n"
-            "  - path: /etc/environment.d/agentvm-proxy.conf\n"
-            "    content: |\n"
-            "      OPENAI_BASE_URL={proxy_base_url}\n"
-            "      OPENAI_API_KEY={proxy_key}\n"
-            "      ANTHROPIC_BASE_URL={proxy_base_url}\n"
-            "      ANTHROPIC_API_KEY={proxy_key}\n"
-            "runcmd:\n"
-            "  - mkdir -p {mount}\n"
-            "  - |-\n"
-            "    grep -q '{mount}' /etc/fstab || \\\n"
-            "    echo 'host_shared {mount} 9p trans=virtio,version=9p2000.L 0 0' >> /etc/fstab\n"  # noqa: E501
-            "  - mount {mount} || true\n"
-            "  - systemctl restart systemd-networkd || true\n"
-            "bootcmd:\n"
-            "  - |\n"
-            "    cat > /etc/systemd/network/10-eth0.network << 'EOF'\n"
-            "    [Match]\n"
-            "    Name=eth0\n"
-            "    [Network]\n"
-            "    Address=10.0.0.0/24\n"
-            "    Gateway={gateway}\n"
-            "    DNS={dns}\n"
-            "    EOF\n"
-        ).format(
-            hostname=config.hostname,
-            ssh_key=config.ssh_public_key,
-            proxy_base_url=config.proxy_base_url,
-            proxy_key=config.proxy_dummy_key,
-            mount=config.shared_folder_mount,
-            gateway=config.network_gateway,
-            dns=dns_list,
+        proxy_env_block = (
+            f"OPENAI_BASE_URL={config.proxy_base_url}\n"
+            f"OPENAI_API_KEY={config.proxy_dummy_key}\n"
+            f"ANTHROPIC_BASE_URL={config.proxy_base_url}\n"
+            f"ANTHROPIC_API_KEY={config.proxy_dummy_key}\n"
+        )
+
+        quoted_mount = shlex.quote(config.shared_folder_mount)
+
+        cloud_config = {
+            "hostname": config.hostname,
+            "ssh_authorized_keys": [config.ssh_public_key],
+            "write_files": [
+                {
+                    "path": "/etc/environment.d/agentvm-proxy.conf",
+                    "content": proxy_env_block,
+                },
+            ],
+            "runcmd": [
+                f"mkdir -p {quoted_mount}",
+                (
+                    f"grep -q {quoted_mount} /etc/fstab || "
+                    f"echo {quoted_mount} 9p trans=virtio,version=9p2000.L 0 0 "
+                    ">> /etc/fstab"
+                ),
+                f"mount {quoted_mount} || true",
+                "systemctl restart systemd-networkd || true",
+            ],
+            "bootcmd": [
+                (
+                    "cat > /etc/systemd/network/10-eth0.network << 'EOF'\n"
+                    "[Match]\n"
+                    "Name=eth0\n"
+                    "[Network]\n"
+                    f"Address={config.network_address}\n"
+                    f"Gateway={config.network_gateway}\n"
+                    f"DNS={', '.join(config.dns_servers)}\n"
+                    "EOF"
+                ),
+            ],
+        }
+
+        return "#cloud-config\n" + yaml.safe_dump(
+            cloud_config, default_flow_style=False, sort_keys=False
         )
 
     def _build_meta_data(self, vm_id: str, hostname: str) -> str:
         """Build cloud-init meta-data content."""
 
-        return (  # noqa: UP032
-            "instance-id: {vm_id}\nlocal-hostname: {hostname}\n"
-        ).format(vm_id=vm_id, hostname=hostname)
+        return f"instance-id: {vm_id}\nlocal-hostname: {hostname}\n"
 
 
 class DependencyError(RuntimeError):
