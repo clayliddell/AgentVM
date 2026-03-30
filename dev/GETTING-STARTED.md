@@ -157,7 +157,35 @@ source .env
    ruff check src/ && ruff format --check src/ && mypy src/ --strict && pytest tests/unit/ --cov-fail-under=95
    ```
 8. **Update task status** to `Ready for Review` in `main` branch (no need to push).
-9. **Submit PR.** CI must pass all gates before merge.
+9. **Submit PR.** CI must pass all gates before merge. Create a PR with `gh`:
+
+```bash
+# Create a PR with a title and body
+gh pr create --title "your PR title" --body "$(cat <<'EOF'
+## Summary
+<1-3 bullet points describing what this PR does>
+
+## Changes
+- List specific changes made
+- Reference any relevant LLD sections or issue numbers
+
+## Testing
+- Describe how the changes were tested
+- Note any new tests added
+EOF
+)"
+```
+
+You can also create a PR interactively:
+```bash
+gh pr create
+```
+This will prompt you for a title and body.
+
+To view your PR after creation:
+```bash
+gh pr view
+```
 
 ### 7. Key Conventions
 
