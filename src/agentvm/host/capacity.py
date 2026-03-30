@@ -8,9 +8,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, cast
+from typing import cast
 
 from agentvm.config import AgentVMConfig
 
@@ -255,10 +256,10 @@ class CapacityManager:
         response: object
 
         if hasattr(metadata_store, "get_active_vms"):
-            get_active_vms = getattr(metadata_store, "get_active_vms")
+            get_active_vms = getattr(metadata_store, "get_active_vms")  # noqa: B009
             response = get_active_vms()
         elif hasattr(metadata_store, "list_vms"):
-            list_vms = getattr(metadata_store, "list_vms")
+            list_vms = getattr(metadata_store, "list_vms")  # noqa: B009
             try:
                 response = list_vms(status="running")
             except TypeError:
