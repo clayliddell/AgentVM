@@ -6,6 +6,8 @@ AgentVM is a platform that provides isolated KVM-based virtual machine sessions 
 
 The ultimate goal: enable AI coding agents to operate in fully isolated, resource-bounded VMs with controlled network access, preventing key exfiltration and cross-tenant interference while maintaining developer-level productivity.
 
+Documentation across this repository is treated as a living set of documents. As requirements evolve, update docs to keep them accurate and current.
+
 ## Getting Started
 
 ### 1. First-Time Setup
@@ -146,18 +148,23 @@ source .env
 ```
 
 1. **Pick a task** from the current phase board in `dev/todo/PHASE<N>.md`.
-2. **Update status** to `In Progress` in `main` branch (no need to push).
-3. **Checkout a new Branch** - Checkout a new branch in git for tracking your progress. You'll later use this branch to create a PR for your work.
-3. **Read the LLD** — every task references its LLD section. Read it before writing code.
-4. **Write a failing test first** (TDD). See [CODE-STANDARD.md](CODE-STANDARD.md) §4.
-5. **Implement the minimum** to make the test pass.
-6. **Refactor** while keeping tests green.
-7. **Run the full check suite:**
+2. **Start from latest `main`** — switch to `main` and pull before starting any work:
+   ```bash
+   git checkout main
+   git pull --ff-only
+   ```
+3. **Update status** to `In Progress` in `main` branch (no need to push).
+4. **Checkout a new branch** — create a branch for your task work. You'll use this branch to open your PR.
+5. **Read the LLD** — every task references its LLD section. Read it before writing code.
+6. **Write a failing test first** (TDD). See [CODE-STANDARD.md](CODE-STANDARD.md) §4.
+7. **Implement the minimum** to make the test pass.
+8. **Refactor** while keeping tests green.
+9. **Run the full check suite:**
    ```bash
    ruff check src/ && ruff format --check src/ && mypy src/ --strict && pytest tests/unit/ --cov-fail-under=95
    ```
-8. **Update task status** to `Ready for Review` in `main` branch (no need to push).
-9. **Submit PR.** CI must pass all gates before merge. Create a PR with `gh`:
+10. **Update task status** to `Ready for Review` in `main` branch (no need to push).
+11. **Submit PR.** CI must pass all gates before merge. Create a PR with `gh`:
 
 ```bash
 # Create a PR with a title and body
