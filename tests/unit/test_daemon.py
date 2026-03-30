@@ -12,8 +12,8 @@ import pytest
 
 from agentvm.daemon import (
     DRAIN_TIMEOUT_SECONDS,
-    _DaemonState,
     _close_store,
+    _DaemonState,
     graceful_shutdown,
     register_signal_handlers,
 )
