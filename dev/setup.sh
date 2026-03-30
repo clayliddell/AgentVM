@@ -202,7 +202,7 @@ summary() {
     log "  1. source .venv/bin/activate"
     log "  2. source .env          # loads AGENTVM_ENV_SETUP_DONE"
     log "  3. Verify: python -c \"import libvirt; print('libvirt OK')\""
-    log "  4. Read docs/CODE-STANDARD.md and todo/PHASE1.md to start work."
+    log "  4. Read docs/CODE-STANDARD.md, todo/todo.md, and the VibeKanban board to start work."
     echo ""
 }
 

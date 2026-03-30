@@ -1,5 +1,10 @@
 # Phase 7: Orchestrator Adapter + Production
 
+> **Note:** Task tracking has moved to VibeKanban. Do not edit task status in this file.
+> Refer to the Kanban board for current status and blocking relationships.
+> This file is the source of truth for requirements, FRs, and E2E tests only.
+> See `dev/todo/todo.md` for details.
+
 **Goal:** Session resume/TTL, orchestrator protocol, image management, schema migrations, production hardening.
 
 **Weeks:** 7–8
