@@ -1,5 +1,10 @@
 # Phase 6: Observability + Security
 
+> **Note:** Task tracking has moved to VibeKanban. Do not edit task status in this file.
+> Refer to the Kanban board for current status and blocking relationships.
+> This file is the source of truth for requirements, FRs, and E2E tests only.
+> See `dev/todo/todo.md` for details.
+
 **Goal:** Full audit trail, Prometheus metrics, health checks, serial console capture, host hardening, red-team validation.
 
 **Weeks:** 6–7

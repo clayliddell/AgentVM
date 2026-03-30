@@ -1,5 +1,10 @@
 # Phase 1: Foundation
 
+> **Note:** Task tracking has moved to VibeKanban. Do not edit task status in this file.
+> Refer to the Kanban board for current status and blocking relationships.
+> This file is the source of truth for requirements, FRs, and E2E tests only.
+> See `dev/todo/todo.md` for details.
+
 **Goal:** Bridge exists, VMs can be created/destroyed, metadata persists, host capacity works, storage initialized, config loads, daemon starts.
 
 **Weeks:** 1–2
