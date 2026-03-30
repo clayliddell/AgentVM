@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import asyncio
 import signal
-import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import FrameType
 
 import structlog
 import uvicorn
 
+from agentvm.api.app import create_app
 from agentvm.config import AgentVMConfig
 from agentvm.db.store import MetadataStore
 from agentvm.observe.metrics import MetricsCollector
@@ -40,7 +40,7 @@ class _DaemonState:
     session_manager: SessionManager | None = None
     metrics: MetricsCollector | None = None
     store: MetadataStore | None = None
-    shutting_down: threading.Event = threading.Event()
+    shutting_down: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 _state = _DaemonState()
@@ -49,13 +49,11 @@ _state = _DaemonState()
 async def _async_graceful_shutdown() -> None:
     """Async graceful shutdown to be called from the event loop.
 
+    The shutting_down flag is set by the signal handler before this task
+    is scheduled, so we don't re-check it here.
+
     Ref: DAEMON-ENTRYPOINT-LLD §3 (shutdown sequence), §5.2
     """
-    if _state.shutting_down.is_set():
-        logger.warning("shutdown_already_in_progress")
-        return
-
-    _state.shutting_down.set()
     logger.info("daemon_shutdown_started")
 
     # 1. Stop accepting new API requests
@@ -66,7 +64,14 @@ async def _async_graceful_shutdown() -> None:
     # 2. Drain active sessions
     #    Ref: DAEMON-ENTRYPOINT-LLD §3 step 2
     if _state.session_manager is not None:
-        _state.session_manager.drain_all_sessions(timeout=DRAIN_TIMEOUT_SECONDS)
+        drain_result = await _state.session_manager.drain_all_sessions(
+            timeout=DRAIN_TIMEOUT_SECONDS
+        )
+        if drain_result.incomplete:
+            logger.warning(
+                "drain_timeout",
+                remaining=drain_result.remaining,
+            )
 
     # 3. Stop metrics exporter
     #    Ref: DAEMON-ENTRYPOINT-LLD §3 step 3
@@ -84,11 +89,15 @@ async def _async_graceful_shutdown() -> None:
 def _signal_handler(signum: int, frame: FrameType | None) -> None:
     """Signal handler that delegates to async shutdown in event loop.
 
-    Uses wakeup fd to unblock the event loop, then schedules async shutdown.
+    Sets the shutdown flag immediately (before scheduling) to prevent
+    duplicate shutdown tasks from rapid successive signals.
     """
     if _state.shutting_down.is_set():
         return
 
+    # Set flag immediately to prevent re-entry from second signal before
+    # the scheduled task runs.
+    _state.shutting_down.set()
     logger.info("shutdown_signal_received", signal=signum)
 
     try:
@@ -126,8 +135,6 @@ async def run_daemon(config: AgentVMConfig) -> None:
 
     # Build uvicorn server (so we can access server.should_exit)
     # Ref: DAEMON-ENTRYPOINT-LLD §3 step 16
-    from agentvm.api.app import create_app
-
     app = create_app()
     uvicorn_config = uvicorn.Config(
         app,

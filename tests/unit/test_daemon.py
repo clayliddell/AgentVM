@@ -5,19 +5,20 @@ Ref: DAEMON-ENTRYPOINT-LLD §5.2
 
 from __future__ import annotations
 
+import asyncio
 import signal
-import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from agentvm.daemon import (
     DRAIN_TIMEOUT_SECONDS,
-    _DaemonState,
     _async_graceful_shutdown,
+    _DaemonState,
     _signal_handler,
     register_signal_handlers,
 )
+from agentvm.session.manager import DrainResult
 
 
 @pytest.fixture()
@@ -28,8 +29,10 @@ def mock_state() -> _DaemonState:
         session_manager=MagicMock(),
         metrics=MagicMock(),
         store=MagicMock(),
-        shutting_down=threading.Event(),
+        shutting_down=asyncio.Event(),
     )
+    state.store.close = AsyncMock()
+    state.session_manager.drain_all_sessions = AsyncMock(return_value=DrainResult())
     return state
 
 
@@ -44,7 +47,6 @@ class TestAsyncGracefulShutdown:
         self, mock_state: _DaemonState
     ) -> None:
         """Shutdown sets server.should_exit = True to stop API."""
-        mock_state.store.close = AsyncMock()
         with patch("agentvm.daemon._state", mock_state):
             await _async_graceful_shutdown()
 
@@ -55,7 +57,6 @@ class TestAsyncGracefulShutdown:
         self, mock_state: _DaemonState
     ) -> None:
         """Shutdown calls drain_all_sessions with configured timeout."""
-        mock_state.store.close = AsyncMock()
         with patch("agentvm.daemon._state", mock_state):
             await _async_graceful_shutdown()
 
@@ -68,7 +69,6 @@ class TestAsyncGracefulShutdown:
         self, mock_state: _DaemonState
     ) -> None:
         """Shutdown stops the Prometheus metrics exporter."""
-        mock_state.store.close = AsyncMock()
         with patch("agentvm.daemon._state", mock_state):
             await _async_graceful_shutdown()
 
@@ -79,33 +79,10 @@ class TestAsyncGracefulShutdown:
         self, mock_state: _DaemonState
     ) -> None:
         """Shutdown closes the metadata store."""
-        mock_state.store.close = AsyncMock()
         with patch("agentvm.daemon._state", mock_state):
             await _async_graceful_shutdown()
 
         mock_state.store.close.assert_called_once()
-
-    @pytest.mark.asyncio()
-    async def test_async_graceful_shutdown_sets_event(
-        self, mock_state: _DaemonState
-    ) -> None:
-        """Shutdown sets the shutting_down event to prevent double shutdown."""
-        mock_state.store.close = AsyncMock()
-        with patch("agentvm.daemon._state", mock_state):
-            await _async_graceful_shutdown()
-
-        assert mock_state.shutting_down.is_set() is True
-
-    @pytest.mark.asyncio()
-    async def test_async_graceful_shutdown_ignores_duplicate_signal(
-        self, mock_state: _DaemonState
-    ) -> None:
-        """Second signal is ignored when shutting_down event is set."""
-        mock_state.shutting_down.set()
-        with patch("agentvm.daemon._state", mock_state):
-            await _async_graceful_shutdown()
-
-        mock_state.session_manager.drain_all_sessions.assert_not_called()
 
     @pytest.mark.asyncio()
     async def test_async_graceful_shutdown_handles_none_components(
@@ -117,12 +94,10 @@ class TestAsyncGracefulShutdown:
             session_manager=None,
             metrics=None,
             store=None,
-            shutting_down=threading.Event(),
+            shutting_down=asyncio.Event(),
         )
         with patch("agentvm.daemon._state", state):
             await _async_graceful_shutdown()
-
-        assert state.shutting_down.is_set() is True
 
     @pytest.mark.asyncio()
     async def test_async_graceful_shutdown_order(
@@ -130,8 +105,13 @@ class TestAsyncGracefulShutdown:
     ) -> None:
         """Drain happens before metrics stop before store close."""
         call_order: list[str] = []
-        mock_state.session_manager.drain_all_sessions.side_effect = lambda **kw: (
+
+        async def track_drain(**kwargs: object) -> DrainResult:
             call_order.append("drain")
+            return DrainResult()
+
+        mock_state.session_manager.drain_all_sessions = AsyncMock(
+            side_effect=track_drain
         )
         mock_state.metrics.stop_exporter.side_effect = lambda: call_order.append(
             "metrics_stop"
@@ -145,6 +125,26 @@ class TestAsyncGracefulShutdown:
 
         assert call_order == ["drain", "metrics_stop", "store_close"]
 
+    @pytest.mark.asyncio()
+    async def test_async_graceful_shutdown_warns_on_drain_timeout(
+        self, mock_state: _DaemonState
+    ) -> None:
+        """Shutdown logs warning when drain times out with sessions remaining."""
+        mock_state.session_manager.drain_all_sessions = AsyncMock(
+            return_value=DrainResult(incomplete=True, remaining=3)
+        )
+
+        with (
+            patch("agentvm.daemon._state", mock_state),
+            patch("agentvm.daemon.logger") as mock_logger,
+        ):
+            await _async_graceful_shutdown()
+
+        mock_logger.warning.assert_any_call(
+            "drain_timeout",
+            remaining=3,
+        )
+
 
 class TestSignalHandler:
     """Tests for signal handler that delegates to async shutdown."""
@@ -154,18 +154,71 @@ class TestSignalHandler:
         mock_loop = MagicMock()
         mock_loop.call_soon = MagicMock()
 
-        with patch("agentvm.daemon.asyncio.get_running_loop", return_value=mock_loop):
+        state = _DaemonState(
+            server=MagicMock(),
+            shutting_down=asyncio.Event(),
+        )
+        with (
+            patch("agentvm.daemon._state", state),
+            patch("agentvm.daemon.asyncio.get_running_loop", return_value=mock_loop),
+        ):
             _signal_handler(signal.SIGTERM, None)
 
         mock_loop.call_soon.assert_called_once()
 
-    def test_signal_handler_handles_no_running_loop(self) -> None:
-        """Signal handler handles RuntimeError when no event loop."""
-        with patch(
-            "agentvm.daemon.asyncio.get_running_loop",
-            side_effect=RuntimeError(),
+    def test_signal_handler_sets_shutdown_flag(self) -> None:
+        """Signal handler sets shutting_down flag before scheduling."""
+        mock_loop = MagicMock()
+
+        state = _DaemonState(
+            server=MagicMock(),
+            shutting_down=asyncio.Event(),
+        )
+        with (
+            patch("agentvm.daemon._state", state),
+            patch("agentvm.daemon.asyncio.get_running_loop", return_value=mock_loop),
         ):
             _signal_handler(signal.SIGTERM, None)
+
+        assert state.shutting_down.is_set() is True
+
+    def test_signal_handler_ignores_duplicate_signal(self) -> None:
+        """Second signal is ignored when shutting_down flag is set."""
+        mock_loop = MagicMock()
+        mock_loop.call_soon = MagicMock()
+
+        state = _DaemonState(
+            server=MagicMock(),
+            shutting_down=asyncio.Event(),
+        )
+        state.shutting_down.set()
+
+        with (
+            patch("agentvm.daemon._state", state),
+            patch("agentvm.daemon.asyncio.get_running_loop", return_value=mock_loop),
+        ):
+            _signal_handler(signal.SIGTERM, None)
+            _signal_handler(signal.SIGINT, None)
+
+        mock_loop.call_soon.assert_not_called()
+
+    def test_signal_handler_handles_no_running_loop(self) -> None:
+        """Signal handler handles RuntimeError when no event loop."""
+        state = _DaemonState(
+            server=MagicMock(),
+            shutting_down=asyncio.Event(),
+        )
+        with (
+            patch("agentvm.daemon._state", state),
+            patch(
+                "agentvm.daemon.asyncio.get_running_loop",
+                side_effect=RuntimeError(),
+            ),
+        ):
+            _signal_handler(signal.SIGTERM, None)
+
+        # Flag should still be set even when no event loop
+        assert state.shutting_down.is_set() is True
 
 
 class TestRegisterSignalHandlers:
@@ -173,12 +226,18 @@ class TestRegisterSignalHandlers:
 
     def test_register_signal_handlers_registers_sigterm(self) -> None:
         """register_signal_handlers installs handler for SIGTERM."""
-        register_signal_handlers()
-        assert signal.getsignal(signal.SIGTERM) is _signal_handler
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        prev_handler = signal.getsignal(signal.SIGTERM)
+        try:
+            register_signal_handlers()
+            assert signal.getsignal(signal.SIGTERM) is _signal_handler
+        finally:
+            signal.signal(signal.SIGTERM, prev_handler)
 
     def test_register_signal_handlers_registers_sigint(self) -> None:
         """register_signal_handlers installs handler for SIGINT."""
-        register_signal_handlers()
-        assert signal.getsignal(signal.SIGINT) is _signal_handler
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        prev_handler = signal.getsignal(signal.SIGINT)
+        try:
+            register_signal_handlers()
+            assert signal.getsignal(signal.SIGINT) is _signal_handler
+        finally:
+            signal.signal(signal.SIGINT, prev_handler)
