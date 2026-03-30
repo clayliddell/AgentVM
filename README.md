@@ -5,3 +5,5 @@ AgentVM is a platform that provides isolated KVM-based virtual machine sessions 
 ## Contributing
 
 To get started developing AgentVM, see [dev/GETTING-STARTED.md](dev/GETTING-STARTED.md).
+
+<!-- test: opencode review workflow -->
