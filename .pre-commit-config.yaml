@@ -3,6 +3,7 @@ repos:
     rev: v0.15.8
     hooks:
       - id: ruff-check
+        name: ruff-check-fix
         args: [--fix]
       - id: ruff-format
 
@@ -13,6 +14,7 @@ repos:
         name: mypy-strict-changed
         args: [--strict]
         files: ^src/.*\.py$
+        additional_dependencies: [types-PyYAML]
 
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
@@ -33,6 +35,7 @@ repos:
         entry: dev/scripts/run_mutation_score_gate.sh
         language: system
         pass_filenames: false
+        stages: [pre-push]
 
       - id: integration-contract-gate
         name: integration-contract-gate
@@ -43,5 +46,11 @@ repos:
       - id: pip-audit-gate
         name: pip-audit-gate
         entry: dev/scripts/run_pip_audit_gate.sh
+        language: system
+        pass_filenames: false
+
+      - id: secrets-baseline-clean-gate
+        name: secrets-baseline-clean-gate
+        entry: dev/scripts/run_secrets_baseline_gate.sh
         language: system
         pass_filenames: false

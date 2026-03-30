@@ -6,14 +6,18 @@ if [ ! -x "$PIP_AUDIT_BIN" ]; then
   PIP_AUDIT_BIN="pip-audit"
 fi
 
+ran_audit=0
+
 if [ -f "requirements-dev.txt" ]; then
   "$PIP_AUDIT_BIN" -r requirements-dev.txt
-  exit 0
+  ran_audit=1
 fi
 
 if [ -f "requirements.txt" ]; then
   "$PIP_AUDIT_BIN" -r requirements.txt
-  exit 0
+  ran_audit=1
 fi
 
-echo "Skipping pip-audit gate: no requirements file found"
+if [ "$ran_audit" -eq 0 ]; then
+  echo "Skipping pip-audit gate: no requirements file found"
+fi

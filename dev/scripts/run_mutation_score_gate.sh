@@ -22,7 +22,7 @@ if [ ! -x "$MUTMUT_BIN" ]; then
   MUTMUT_BIN="mutmut"
 fi
 
-"$MUTMUT_BIN" run
+"$MUTMUT_BIN" run --paths-to-mutate=src/
 
 STATS="$($MUTMUT_BIN export-cicd-stats)"
 
