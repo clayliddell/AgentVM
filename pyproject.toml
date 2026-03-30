@@ -1,0 +1,21 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "T20", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_untyped_defs = true
+disallow_any_generics = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+markers = [
+  "integration: marks integration tests across component boundaries",
+  "contract: marks contract-shape validation tests",
+  "e2e: marks end-to-end workflow tests",
+]

@@ -11,6 +11,7 @@ build/
 .venv/
 venv/
 env/
+.direnv/
 
 # Virtual environment marker
 .env
@@ -39,6 +40,5 @@ proxy/vendor/
 Thumbs.db
 
 # Secrets / credentials
-.secrets.baseline
 *.pem
 *.key

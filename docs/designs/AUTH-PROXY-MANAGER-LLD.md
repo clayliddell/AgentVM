@@ -120,13 +120,13 @@ log_path: "/var/lib/agentvm/logs/proxy-sess-a1b2c3d4.log"
 upstreams:
   openai:
     base_url: "https://api.openai.com"
-    api_key_env: "OPENAI_API_KEY"      # Real key read from env var at launch — NEVER stored in file
+    credential_env: "OPENAI_PROVIDER_TOKEN"      # Real token read from env var at launch — NEVER stored in file
   anthropic:
     base_url: "https://api.anthropic.com"
-    api_key_env: "ANTHROPIC_API_KEY"   # Real key read from env var at launch — NEVER stored in file
+    credential_env: "ANTHROPIC_PROVIDER_TOKEN"   # Real token read from env var at launch — NEVER stored in file
 ```
 
-**Note:** Real API keys are passed to the proxy subprocess via environment variables (see `create_proxy()` env dict). The config YAML only references env var names, never plaintext keys. The Go binary reads the key at startup from the referenced env var.
+**Note:** Real provider credentials are passed to the proxy subprocess via environment variables (see `create_proxy()` env dict). The config YAML only references env var names, never plaintext credentials. The Go binary reads the credential at startup from the referenced env var.
 
 **Proxy request flow:**
 ```
