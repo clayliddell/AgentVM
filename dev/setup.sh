@@ -3,7 +3,8 @@
 # setup.sh — Bootstrap the AgentVM development environment.
 #
 # Run from the repository root:
-#   ./dev/setup.sh
+#   ./dev/setup.sh              # full setup (system packages + Python + Go + storage)
+#   ./dev/setup.sh --dev-only   # lightweight: Python venv + pre-commit only
 #
 # Safe to re-run; all steps are idempotent.
 #
@@ -14,6 +15,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
 VENV_DIR="${REPO_ROOT}/.venv"
 PROXY_DIR="${REPO_ROOT}/proxy"
+
+DEV_ONLY=false
+for arg in "$@"; do
+    case "$arg" in
+        --dev-only) DEV_ONLY=true ;;
+        *) ;;
+    esac
+done
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,9 +40,27 @@ need_sudo() {
 
 SUDO="$(need_sudo)"
 
+is_container() {
+    # Detect Docker, LXC, or other container runtimes
+    [[ -f /.dockerenv ]] && return 0
+    [[ -f /run/.containerenv ]] && return 0
+    grep -qE '(docker|lxc|container)' /proc/1/cgroup 2>/dev/null && return 0
+    return 1
+}
+
+SKIP_HOST=false
+if is_container; then
+    SKIP_HOST=true
+    log "Container environment detected — skipping KVM/libvirt/system package steps."
+fi
+
 # ── 1. System packages ───────────────────────────────────────────────────────
 
 install_system_packages() {
+    if $SKIP_HOST || $DEV_ONLY; then
+        log "Skipping system packages (container or --dev-only mode)."
+        return 0
+    fi
     log "Installing system packages (requires sudo)..."
     $SUDO apt-get update -qq
     $SUDO apt-get install -y -qq \
@@ -56,6 +83,10 @@ install_system_packages() {
 # ── 2. Verify KVM / nested virt ─────────────────────────────────────────────
 
 verify_kvm() {
+    if $SKIP_HOST || $DEV_ONLY; then
+        log "Skipping KVM verification (container or --dev-only mode)."
+        return 0
+    fi
     log "Verifying KVM support..."
     if [[ ! -e /dev/kvm ]]; then
         err "/dev/kvm not found. Nested virtualization may not be enabled."
@@ -73,6 +104,10 @@ verify_kvm() {
 # ── 3. libvirtd ──────────────────────────────────────────────────────────────
 
 setup_libvirtd() {
+    if $SKIP_HOST || $DEV_ONLY; then
+        log "Skipping libvirtd setup (container or --dev-only mode)."
+        return 0
+    fi
     log "Starting libvirtd..."
     $SUDO systemctl enable --now libvirtd 2>/dev/null || true
     # Ensure the default network is active (needed for some libvirt setups)
@@ -89,7 +124,8 @@ setup_libvirtd() {
 setup_python_venv() {
     log "Setting up Python 3.12 virtualenv at ${VENV_DIR}..."
     if [[ ! -d "${VENV_DIR}" ]]; then
-        python3.12 -m venv "${VENV_DIR}"
+        python3.12 -m venv "${VENV_DIR}" 2>/dev/null \
+            || python3 -m venv "${VENV_DIR}"
     fi
     # shellcheck disable=SC1091
     source "${VENV_DIR}/bin/activate"
@@ -100,6 +136,7 @@ setup_python_venv() {
     if [[ -f "${REPO_ROOT}/requirements-dev.txt" ]]; then
         log "Installing Python dev dependencies..."
         pip install -r "${REPO_ROOT}/requirements-dev.txt" -q
+        pip install -q types-PyYAML  # Required for mypy strict type checking
     else
         warn "requirements-dev.txt not found — installing core dev tools directly."
         pip install -q \
@@ -124,6 +161,10 @@ setup_python_venv() {
 # ── 5. Go toolchain ─────────────────────────────────────────────────────────
 
 setup_go() {
+    if $DEV_ONLY; then
+        log "Skipping Go toolchain (--dev-only mode)."
+        return 0
+    fi
     log "Verifying Go toolchain..."
     export PATH="/usr/lib/go-1.22/bin:${PATH}"
     if ! command -v go &>/dev/null; then
@@ -164,6 +205,10 @@ setup_precommit() {
 # ── 7. Storage directories ──────────────────────────────────────────────────
 
 setup_storage_dirs() {
+    if $SKIP_HOST || $DEV_ONLY; then
+        log "Skipping storage directory creation (container or --dev-only mode)."
+        return 0
+    fi
     log "Creating storage directory tree..."
     local base="/var/lib/agentvm"
     for sub in base vms shared proxy keys logs; do
@@ -190,7 +235,33 @@ EOF
     log ".env updated — AGENTVM_ENV_SETUP_DONE=true"
 }
 
-# ── 9. Summary ───────────────────────────────────────────────────────────────
+# ── 9. Verify tools ─────────────────────────────────────────────────────────
+
+verify_tools() {
+    log "Verifying installed tools..."
+    local all_ok=true
+
+    # shellcheck disable=SC1091
+    source "${VENV_DIR}/bin/activate"
+
+    for tool in ruff mypy pytest pre-commit pip-audit detect-secrets mutmut; do
+        if command -v "$tool" &>/dev/null; then
+            log "  $tool: OK"
+        else
+            err "  $tool: NOT FOUND"
+            all_ok=false
+        fi
+    done
+
+    if $all_ok; then
+        log "All dev tools verified."
+    else
+        err "Some tools are missing. Try: pip install -r requirements-dev.txt"
+        exit 1
+    fi
+}
+
+# ── 10. Summary ──────────────────────────────────────────────────────────────
 
 summary() {
     echo ""
@@ -201,8 +272,13 @@ summary() {
     log "Next steps:"
     log "  1. source .venv/bin/activate"
     log "  2. source .env          # loads AGENTVM_ENV_SETUP_DONE"
-    log "  3. Verify: python -c \"import libvirt; print('libvirt OK')\""
-    log "  4. Read docs/CODE-STANDARD.md, todo/todo.md, and the VibeKanban board to start work."
+    if ! $DEV_ONLY && ! $SKIP_HOST; then
+        log "  3. Verify libvirt: python -c \"import libvirt; print('libvirt OK')\""
+        log "  4. Read dev/CODE-STANDARD.md and dev/todo/todo.md to start work."
+    else
+        log "  3. Run tests: pytest tests/unit/ -v"
+        log "  4. Read dev/CODE-STANDARD.md and dev/todo/todo.md to start work."
+    fi
     echo ""
 }
 
@@ -211,6 +287,9 @@ summary() {
 main() {
     log "Starting AgentVM dev environment setup..."
     log "Repo root: ${REPO_ROOT}"
+    if $DEV_ONLY; then
+        log "Mode: dev-only (Python venv + pre-commit)"
+    fi
 
     install_system_packages
     verify_kvm
@@ -220,6 +299,7 @@ main() {
     setup_precommit
     setup_storage_dirs
     write_env_marker
+    verify_tools
     summary
 }
 

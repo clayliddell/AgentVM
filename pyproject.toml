@@ -16,9 +16,4 @@ disallow_any_generics = true
 warn_return_any = true
 warn_unused_configs = true
 
-[tool.pytest.ini_options]
-markers = [
-  "integration: marks integration tests across component boundaries",
-  "contract: marks contract-shape validation tests",
-  "e2e: marks end-to-end workflow tests",
-]
+
