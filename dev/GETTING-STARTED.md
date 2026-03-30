@@ -39,6 +39,12 @@ source .venv/bin/activate
 source .env
 ```
 
+Verify tool availability:
+
+```bash
+which pre-commit ruff mypy pytest
+```
+
 Check `AGENTVM_ENV_SETUP_DONE` in `.env`:
 - If `false` (or missing), run `./dev/setup.sh` first.
 - If `true`, the environment is ready — proceed to development.
