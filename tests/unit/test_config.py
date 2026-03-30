@@ -96,6 +96,17 @@ def test_load_raises_config_error_for_invalid_values(tmp_path: Path) -> None:
         AgentVMConfig.load(str(config_path))
 
 
+def test_env_var_type_mismatch_raises_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "agentvm.yaml"
+    config_path.write_text("api:\n  port: 9090\n", encoding="utf-8")
+    monkeypatch.setenv("AGENTVM_API_PORT", "not-a-number")
+
+    with pytest.raises(ConfigError):
+        AgentVMConfig.load(str(config_path))
+
+
 def test_repr_redacts_api_key_secret(tmp_path: Path) -> None:
     config_path = tmp_path / "agentvm.yaml"
     config_path.write_text(
