@@ -223,14 +223,19 @@ setup_storage_dirs() {
 
 write_env_marker() {
     log "Writing .env marker..."
-    cat > "${ENV_FILE}" <<'EOF'
+    cat > "${ENV_FILE}" <<EOF
 # Track whether the dev environment has been set up by a prior session.
 # After running setup.sh, this is set to "true".
 # Source this file before working: source .env
 AGENTVM_ENV_SETUP_DONE=true
 
 # Make Go 1.22 available on PATH
-export PATH="/usr/lib/go-1.22/bin:${PATH}"
+export PATH="/usr/lib/go-1.22/bin:\${PATH}"
+
+# Activate Python virtual environment
+if [ -f "${VENV_DIR}/bin/activate" ]; then
+    source "${VENV_DIR}/bin/activate"
+fi
 EOF
     log ".env updated — AGENTVM_ENV_SETUP_DONE=true"
 }
