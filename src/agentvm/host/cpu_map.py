@@ -27,6 +27,12 @@ class CPUTopology:
 def detect_nested_virt_support(sys_module_path: Path = Path("/sys/module")) -> bool:
     """Detect nested virtualization support from KVM module parameters.
 
+    Args:
+        sys_module_path: Root path that contains KVM module parameter files.
+
+    Returns:
+        bool: ``True`` when nested virtualization is enabled.
+
     Ref: HOST-MANAGER-LLD Section 5.1
     """
 
@@ -61,6 +67,14 @@ class CPUMapManager:
     ) -> None:
         """Initialize CPU map manager paths.
 
+        Args:
+            cpu_sys_path: Root CPU sysfs directory.
+            node_sys_path: Root NUMA node sysfs directory.
+            module_sys_path: Root module sysfs directory.
+
+        Returns:
+            None
+
         Ref: HOST-MANAGER-LLD Section 5.1
         """
 
@@ -70,6 +84,9 @@ class CPUMapManager:
 
     def get_topology(self) -> CPUTopology:
         """Read topology from sysfs.
+
+        Returns:
+            CPUTopology: Host topology including NUMA and sibling data.
 
         Ref: HOST-MANAGER-LLD Section 3.2
         """
@@ -117,6 +134,17 @@ class CPUMapManager:
     ) -> tuple[str, int]:
         """Allocate CPU cores while honoring reservations.
 
+        Args:
+            count: Number of cores to allocate.
+            reserved: Cores reserved for host/system usage.
+            already_allocated: Cores currently assigned to other VMs.
+
+        Returns:
+            tuple[str, int]: Cpuset string and selected NUMA node id.
+
+        Raises:
+            ValueError: If ``count`` is non-positive or insufficient cores exist.
+
         Ref: HOST-MANAGER-LLD Section 3.2
         """
 
@@ -149,6 +177,12 @@ class CPUMapManager:
 
     def release_cores(self, cores: list[int]) -> None:
         """Release cores back to pool.
+
+        Args:
+            cores: Core ids to release.
+
+        Returns:
+            None
 
         Ref: HOST-MANAGER-LLD Section 3.2
         """

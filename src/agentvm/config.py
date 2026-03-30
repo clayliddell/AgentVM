@@ -195,6 +195,15 @@ class AgentVMConfig:
     def load(config_path: str | None = None) -> AgentVMConfig:
         """Load config from YAML and apply environment variable overrides.
 
+        Args:
+            config_path: Optional explicit path to the YAML config file.
+
+        Returns:
+            AgentVMConfig: Parsed and validated typed configuration.
+
+        Raises:
+            ConfigError: If the config content is invalid.
+
         Ref: CONFIG-LLD Section 5.1
         """
 
@@ -228,6 +237,9 @@ class AgentVMConfig:
     def validate(self) -> list[str]:
         """Validate all config values and prepare filesystem paths.
 
+        Returns:
+            list[str]: Validation errors. Empty list means config is valid.
+
         Ref: CONFIG-LLD Section 5
         """
 
@@ -241,6 +253,9 @@ class AgentVMConfig:
     def database_path(self) -> str:
         """Return full path to metadata database.
 
+        Returns:
+            str: Absolute path to the metadata SQLite database file.
+
         Ref: CONFIG-LLD Section 3.1
         """
 
@@ -248,6 +263,9 @@ class AgentVMConfig:
 
     def audit_log_full_path(self) -> str:
         """Return full path to audit log.
+
+        Returns:
+            str: Absolute path to the audit log file.
 
         Ref: CONFIG-LLD Section 3.1
         """

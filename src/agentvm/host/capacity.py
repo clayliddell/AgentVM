@@ -69,6 +69,15 @@ class CapacityManager:
     ) -> None:
         """Initialize a capacity manager.
 
+        Args:
+            config: Runtime AgentVM configuration.
+            cpuinfo_path: Path to the host cpuinfo file.
+            meminfo_path: Path to the host meminfo file.
+            statvfs: Callable used to inspect filesystem capacity.
+
+        Returns:
+            None
+
         Ref: HOST-MANAGER-LLD Section 5.2
         """
 
@@ -80,6 +89,9 @@ class CapacityManager:
 
     def get_capacity(self) -> HostCapacity:
         """Return current host resource availability.
+
+        Returns:
+            HostCapacity: Aggregate host capacity and free resources.
 
         Ref: HOST-MANAGER-LLD Section 3.1
         """
@@ -120,6 +132,14 @@ class CapacityManager:
     ) -> CapacityCheckResult:
         """Check if requested resources fit current availability.
 
+        Args:
+            cpu_cores: Requested vCPU count.
+            memory_mb: Requested memory in MiB.
+            disk_gb: Requested disk size in GiB.
+
+        Returns:
+            CapacityCheckResult: Sufficiency and shortfall details.
+
         Ref: HOST-MANAGER-LLD Section 3.1
         """
 
@@ -157,6 +177,18 @@ class CapacityManager:
     ) -> None:
         """Record resource allocation for one VM.
 
+        Args:
+            vm_id: Unique VM identifier.
+            cpu_cores: Allocated vCPU count.
+            memory_mb: Allocated memory in MiB.
+            disk_gb: Allocated disk size in GiB.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If an allocation already exists for ``vm_id``.
+
         Ref: HOST-MANAGER-LLD Section 3.1
         """
 
@@ -172,6 +204,12 @@ class CapacityManager:
     def release(self, vm_id: str) -> None:
         """Release resource allocation for one VM.
 
+        Args:
+            vm_id: Unique VM identifier.
+
+        Returns:
+            None
+
         Ref: HOST-MANAGER-LLD Section 3.1
         """
 
@@ -179,6 +217,12 @@ class CapacityManager:
 
     def reconcile_allocations(self, metadata_store: object) -> None:
         """Rebuild allocation tracking from metadata records.
+
+        Args:
+            metadata_store: Store implementing ``get_active_vms`` or ``list_vms``.
+
+        Returns:
+            None
 
         Ref: HOST-MANAGER-LLD Section 5.2
         """

@@ -1,1 +1,4 @@
-"""AgentVM Python package."""
+"""AgentVM package entrypoint.
+
+Ref: HLD Section 3
+"""
