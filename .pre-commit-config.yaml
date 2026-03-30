@@ -1,0 +1,47 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.8
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        name: mypy-strict-changed
+        args: [--strict]
+        files: ^src/.*\.py$
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+
+  - repo: local
+    hooks:
+      - id: unit-coverage-gate
+        name: unit-tests-coverage-gate
+        entry: dev/scripts/run_unit_coverage_gate.sh
+        language: system
+        pass_filenames: false
+
+      - id: mutation-score-gate
+        name: mutation-tests-score-gate
+        entry: dev/scripts/run_mutation_score_gate.sh
+        language: system
+        pass_filenames: false
+
+      - id: integration-contract-gate
+        name: integration-contract-gate
+        entry: dev/scripts/run_integration_contract_gate.sh
+        language: system
+        pass_filenames: false
+
+      - id: pip-audit-gate
+        name: pip-audit-gate
+        entry: dev/scripts/run_pip_audit_gate.sh
+        language: system
+        pass_filenames: false

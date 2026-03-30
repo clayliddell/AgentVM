@@ -39,6 +39,5 @@ proxy/vendor/
 Thumbs.db
 
 # Secrets / credentials
-.secrets.baseline
 *.pem
 *.key
