@@ -184,9 +184,6 @@ write_env_marker() {
 # Source this file before working: source .env
 AGENTVM_ENV_SETUP_DONE=true
 
-# Activate Python virtualenv
-source .venv/bin/activate
-
 # Make Go 1.22 available on PATH
 export PATH="/usr/lib/go-1.22/bin:${PATH}"
 EOF
