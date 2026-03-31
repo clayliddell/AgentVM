@@ -42,7 +42,7 @@ class TestAsyncGracefulShutdown:
     Ref: DAEMON-ENTRYPOINT-LLD §5.2
     """
 
-    @pytest.mark.asyncio()
+    @pytest.mark.anyio()
     async def test_async_graceful_shutdown_sets_server_should_exit(
         self, mock_state: _DaemonState
     ) -> None:
@@ -52,7 +52,7 @@ class TestAsyncGracefulShutdown:
 
         assert mock_state.server.should_exit is True
 
-    @pytest.mark.asyncio()
+    @pytest.mark.anyio()
     async def test_async_graceful_shutdown_drains_sessions(
         self, mock_state: _DaemonState
     ) -> None:
@@ -64,7 +64,7 @@ class TestAsyncGracefulShutdown:
             timeout=DRAIN_TIMEOUT_SECONDS
         )
 
-    @pytest.mark.asyncio()
+    @pytest.mark.anyio()
     async def test_async_graceful_shutdown_stops_metrics_exporter(
         self, mock_state: _DaemonState
     ) -> None:
@@ -74,7 +74,7 @@ class TestAsyncGracefulShutdown:
 
         mock_state.metrics.stop_exporter.assert_called_once()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.anyio()
     async def test_async_graceful_shutdown_closes_store(
         self, mock_state: _DaemonState
     ) -> None:
@@ -84,7 +84,7 @@ class TestAsyncGracefulShutdown:
 
         mock_state.store.close.assert_called_once()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.anyio()
     async def test_async_graceful_shutdown_handles_none_components(
         self, mock_state: _DaemonState
     ) -> None:
@@ -99,7 +99,7 @@ class TestAsyncGracefulShutdown:
         with patch("agentvm.daemon._state", state):
             await _async_graceful_shutdown()
 
-    @pytest.mark.asyncio()
+    @pytest.mark.anyio()
     async def test_async_graceful_shutdown_order(
         self, mock_state: _DaemonState
     ) -> None:
@@ -125,7 +125,7 @@ class TestAsyncGracefulShutdown:
 
         assert call_order == ["drain", "metrics_stop", "store_close"]
 
-    @pytest.mark.asyncio()
+    @pytest.mark.anyio()
     async def test_async_graceful_shutdown_warns_on_drain_timeout(
         self, mock_state: _DaemonState
     ) -> None:

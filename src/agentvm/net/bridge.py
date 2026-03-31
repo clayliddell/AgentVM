@@ -1,0 +1,81 @@
+"""Bridge lifecycle and per-session interface allocation.
+
+Ref: NETWORK-MANAGER-LLD Section 3.1
+"""
+
+from __future__ import annotations
+
+import secrets
+from collections.abc import Callable
+
+
+class BridgeManager:
+    """Bridge lifecycle management.
+
+    Ref: NETWORK-MANAGER-LLD Section 3.1
+    """
+
+    def __init__(self, *, mac_factory: Callable[[], str] | None = None) -> None:
+        """Initialize a bridge manager.
+
+        Args:
+            mac_factory: Optional MAC generator for deterministic testing.
+
+        Returns:
+            None
+
+        Ref: NETWORK-MANAGER-LLD Section 3.1
+        """
+
+        self._mac_factory = mac_factory or self._generate_mac
+        self._session_interfaces: dict[str, tuple[str, str]] = {}
+        self._allocated_vnets: set[str] = set()
+        self._allocated_macs: set[str] = set()
+        self._next_vnet_index = 0
+
+    def allocate_vm_interface(self, session_id: str) -> tuple[str, str]:
+        """Allocate a unique vnet name and MAC address.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            tuple[str, str]: ``(vnet_name, mac_address)``.
+
+        Ref: NETWORK-MANAGER-LLD Section 3.1
+        """
+
+        existing = self._session_interfaces.get(session_id)
+        if existing is not None:
+            return existing
+
+        vnet_name = self._allocate_vnet_name()
+        mac_address = self._allocate_unique_mac()
+        interface = (vnet_name, mac_address)
+
+        self._session_interfaces[session_id] = interface
+        self._allocated_vnets.add(vnet_name)
+        self._allocated_macs.add(mac_address)
+        return interface
+
+    def _allocate_vnet_name(self) -> str:
+        while True:
+            candidate = f"vnet{self._next_vnet_index}"
+            self._next_vnet_index += 1
+            if candidate not in self._allocated_vnets:
+                return candidate
+
+    def _allocate_unique_mac(self) -> str:
+        while True:
+            candidate = self._mac_factory().lower()
+            if candidate not in self._allocated_macs:
+                return candidate
+
+    @staticmethod
+    def _generate_mac() -> str:
+        first_octet = secrets.randbelow(256)
+        first_octet |= 0x02
+        first_octet &= 0xFE
+        remaining = [secrets.randbelow(256) for _ in range(5)]
+        octets = [first_octet, *remaining]
+        return ":".join(f"{value:02x}" for value in octets)
