@@ -8,14 +8,16 @@ from __future__ import annotations
 import asyncio
 import signal
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import FrameType
 
-import structlog
-import uvicorn
+import structlog  # type: ignore[import-not-found]
+import uvicorn  # type: ignore[import-not-found]
 
 from agentvm.api.app import create_app
 from agentvm.config import AgentVMConfig
 from agentvm.db.store import MetadataStore
+from agentvm.net.bridge import BridgeManager
 from agentvm.observe.metrics import MetricsCollector
 from agentvm.session.manager import SessionManager
 
@@ -118,15 +120,46 @@ def register_signal_handlers() -> None:
     signal.signal(signal.SIGINT, _signal_handler)
 
 
+def _ensure_storage_tree(config: AgentVMConfig) -> None:
+    """Ensure required storage directories exist.
+
+    Args:
+        config: Runtime AgentVM configuration.
+
+    Returns:
+        None
+
+    Ref: DAEMON-ENTRYPOINT-LLD Section 3 (startup step 4)
+    """
+
+    storage_paths = [
+        config.storage.base_dir,
+        config.storage.base_images_dir,
+        config.storage.vm_data_dir,
+        config.storage.shared_dir,
+        config.storage.proxy_dir,
+    ]
+    for path in storage_paths:
+        Path(path).mkdir(parents=True, exist_ok=True)
+
+
 async def run_daemon(config: AgentVMConfig) -> None:
     """Run the daemon with uvicorn, wiring all components.
 
     Ref: DAEMON-ENTRYPOINT-LLD §3 (full startup sequence)
     """
-    # Stub: initialize components
+    # 1. Initialize metadata store
     _state.store = MetadataStore()
     await _state.store.initialize()
 
+    # 2. Ensure storage tree exists
+    _ensure_storage_tree(config)
+
+    # 3. Ensure network bridge exists
+    bridge_manager = BridgeManager(bridge_name=config.network.bridge_name)
+    bridge_name = bridge_manager.ensure_bridge()
+
+    # 4. Wire session and observability components
     _state.session_manager = SessionManager()
 
     _state.metrics = MetricsCollector()
@@ -152,6 +185,7 @@ async def run_daemon(config: AgentVMConfig) -> None:
         "daemon_starting",
         host=config.api.host,
         port=config.api.port,
+        bridge=bridge_name,
     )
 
     # Run server (blocks until should_exit is set)

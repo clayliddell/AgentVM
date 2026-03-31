@@ -5,7 +5,7 @@ Ref: REST-API-LLD §3.1
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI  # type: ignore[import-not-found]
 
 
 def create_app() -> FastAPI:
@@ -15,7 +15,7 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(title="AgentVM")
 
-    @app.get("/health")
+    @app.get("/health")  # type: ignore[untyped-decorator]
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 

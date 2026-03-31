@@ -15,10 +15,16 @@ class BridgeManager:
     Ref: NETWORK-MANAGER-LLD Section 3.1
     """
 
-    def __init__(self, *, mac_factory: Callable[[], str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        bridge_name: str = "agentvm-br0",
+        mac_factory: Callable[[], str] | None = None,
+    ) -> None:
         """Initialize a bridge manager.
 
         Args:
+            bridge_name: Host bridge name used for VM networking.
             mac_factory: Optional MAC generator for deterministic testing.
 
         Returns:
@@ -27,11 +33,26 @@ class BridgeManager:
         Ref: NETWORK-MANAGER-LLD Section 3.1
         """
 
+        self._bridge_name = bridge_name
         self._mac_factory = mac_factory or self._generate_mac
         self._session_interfaces: dict[str, tuple[str, str]] = {}
         self._allocated_vnets: set[str] = set()
         self._allocated_macs: set[str] = set()
         self._next_vnet_index = 0
+
+    def ensure_bridge(self) -> str:
+        """Return the configured bridge name.
+
+        This is a minimal startup implementation that treats bridge
+        verification as a no-op until full network provisioning is added.
+
+        Returns:
+            str: Configured bridge name.
+
+        Ref: NETWORK-MANAGER-LLD Section 3.1
+        """
+
+        return self._bridge_name
 
     def allocate_vm_interface(self, session_id: str) -> tuple[str, str]:
         """Allocate a unique vnet name and MAC address.

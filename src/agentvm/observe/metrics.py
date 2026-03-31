@@ -5,7 +5,7 @@ Ref: OBSERVABILITY-LLD §3.2
 
 from __future__ import annotations
 
-import structlog
+import structlog  # type: ignore[import-not-found]
 
 logger = structlog.get_logger()
 

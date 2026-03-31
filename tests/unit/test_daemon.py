@@ -7,16 +7,21 @@ from __future__ import annotations
 
 import asyncio
 import signal
+from dataclasses import replace
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from agentvm.config import AgentVMConfig
 from agentvm.daemon import (
     DRAIN_TIMEOUT_SECONDS,
     _async_graceful_shutdown,
     _DaemonState,
+    _ensure_storage_tree,
     _signal_handler,
     register_signal_handlers,
+    run_daemon,
 )
 from agentvm.session.manager import DrainResult
 
@@ -241,3 +246,71 @@ class TestRegisterSignalHandlers:
             assert signal.getsignal(signal.SIGINT) is _signal_handler
         finally:
             signal.signal(signal.SIGINT, prev_handler)
+
+
+class TestStartupHelpers:
+    def test_ensure_storage_tree_creates_required_directories(
+        self, tmp_path: Path
+    ) -> None:
+        config = AgentVMConfig.load()
+        storage = replace(
+            config.storage,
+            base_dir=str(tmp_path / "agentvm"),
+            base_images_dir=str(tmp_path / "agentvm" / "base"),
+            vm_data_dir=str(tmp_path / "agentvm" / "vms"),
+            shared_dir=str(tmp_path / "agentvm" / "shared"),
+            proxy_dir=str(tmp_path / "agentvm" / "proxy"),
+        )
+        updated_config = replace(config, storage=storage)
+
+        _ensure_storage_tree(updated_config)
+
+        assert (tmp_path / "agentvm").is_dir()
+        assert (tmp_path / "agentvm" / "base").is_dir()
+        assert (tmp_path / "agentvm" / "vms").is_dir()
+        assert (tmp_path / "agentvm" / "shared").is_dir()
+        assert (tmp_path / "agentvm" / "proxy").is_dir()
+
+
+class TestRunDaemon:
+    @pytest.mark.anyio()
+    async def test_run_daemon_performs_minimal_startup_sequence(
+        self, tmp_path: Path
+    ) -> None:
+        config = AgentVMConfig.load()
+        storage = replace(
+            config.storage,
+            base_dir=str(tmp_path / "agentvm"),
+            base_images_dir=str(tmp_path / "agentvm" / "base"),
+            vm_data_dir=str(tmp_path / "agentvm" / "vms"),
+            shared_dir=str(tmp_path / "agentvm" / "shared"),
+            proxy_dir=str(tmp_path / "agentvm" / "proxy"),
+        )
+        observability = replace(config.observability, metrics_enabled=False)
+        config = replace(config, storage=storage, observability=observability)
+
+        mock_store = MagicMock()
+        mock_store.initialize = AsyncMock()
+        mock_server = MagicMock()
+        mock_server.serve = AsyncMock()
+        mock_bridge = MagicMock()
+        mock_bridge.ensure_bridge.return_value = config.network.bridge_name
+
+        with (
+            patch("agentvm.daemon._state", _DaemonState()),
+            patch("agentvm.daemon.MetadataStore", return_value=mock_store),
+            patch("agentvm.daemon.BridgeManager", return_value=mock_bridge),
+            patch("agentvm.daemon.uvicorn.Server", return_value=mock_server),
+            patch("agentvm.daemon.register_signal_handlers") as register_handlers,
+        ):
+            await run_daemon(config)
+
+        mock_store.initialize.assert_awaited_once()
+        mock_bridge.ensure_bridge.assert_called_once_with()
+        register_handlers.assert_called_once_with()
+        mock_server.serve.assert_awaited_once_with()
+
+        assert (tmp_path / "agentvm" / "base").is_dir()
+        assert (tmp_path / "agentvm" / "vms").is_dir()
+        assert (tmp_path / "agentvm" / "shared").is_dir()
+        assert (tmp_path / "agentvm" / "proxy").is_dir()
