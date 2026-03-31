@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
-import structlog  # type: ignore[import-not-found]
+import structlog
 
 logger = structlog.get_logger()
 
@@ -98,7 +98,7 @@ class MetadataStore:
         row = self._query_one("SELECT * FROM sessions WHERE id = ?", (session_id,))
         return _decode_row(row) if row is not None else None
 
-    async def update_session(self, session_id: str, updates: dict[str, Any]) -> None:
+    async def update_session(self, session_id: str, updates: dict[str, Any]) -> bool:
         """Update session fields.
 
         Ref: METADATA-STORE-LLD §3.2
@@ -106,7 +106,7 @@ class MetadataStore:
 
         current = await self.get_session(session_id)
         if current is None:
-            return
+            return False
         merged = {**current, **updates}
         self._execute(
             """
@@ -122,6 +122,7 @@ class MetadataStore:
                 session_id,
             ),
         )
+        return True
 
     async def list_sessions(
         self, owner: str | None = None, status: str | None = None
@@ -247,7 +248,7 @@ class MetadataStore:
         rows = self._query_all("SELECT * FROM vms WHERE base_image = ?", (base_image,))
         return [_decode_row(row) for row in rows]
 
-    async def update_vm(self, vm_id: str, updates: dict[str, Any]) -> None:
+    async def update_vm(self, vm_id: str, updates: dict[str, Any]) -> bool:
         """Update VM fields.
 
         Ref: METADATA-STORE-LLD §3.2
@@ -255,7 +256,7 @@ class MetadataStore:
 
         current = await self.get_vm(vm_id)
         if current is None:
-            return
+            return False
         merged = {**current, **updates}
         self._execute(
             """
@@ -283,6 +284,7 @@ class MetadataStore:
                 vm_id,
             ),
         )
+        return True
 
     async def delete_vm(self, vm_id: str) -> None:
         """Delete VM record.
@@ -305,7 +307,7 @@ class MetadataStore:
             rows = self._query_all("SELECT * FROM vms WHERE status = ?", (status,))
         return [_decode_row(row) for row in rows]
 
-    def get_active_vms(self) -> list[dict[str, Any]]:
+    async def get_active_vms(self) -> list[dict[str, Any]]:
         """Return active VM rows for capacity reconciliation.
 
         Ref: HOST-MANAGER-LLD Section 5.2
@@ -599,7 +601,9 @@ class MetadataStore:
         Ref: METADATA-STORE-LLD §3.2
         """
 
-        self._execute(f"PRAGMA user_version={int(target_version)}", ())
+        version = int(target_version)
+        # SQLite does not support bound parameters for PRAGMA statements.
+        self._execute(f"PRAGMA user_version = {version}", ())
 
     def _connection(self) -> sqlite3.Connection:
         if self._conn is None:
@@ -656,6 +660,10 @@ class MetadataStore:
             (),
         )
         self._execute(
+            "CREATE INDEX IF NOT EXISTS idx_vms_session_id ON vms (session_id)",
+            (),
+        )
+        self._execute(
             """
             CREATE TABLE IF NOT EXISTS proxies (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -669,6 +677,13 @@ class MetadataStore:
             (),
         )
         self._execute(
+            (
+                "CREATE INDEX IF NOT EXISTS idx_proxies_session_id "
+                "ON proxies (session_id)"
+            ),
+            (),
+        )
+        self._execute(
             """
             CREATE TABLE IF NOT EXISTS shared_folders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -677,6 +692,13 @@ class MetadataStore:
                 data TEXT NOT NULL
             )
             """,
+            (),
+        )
+        self._execute(
+            (
+                "CREATE INDEX IF NOT EXISTS idx_shared_folders_session_id "
+                "ON shared_folders (session_id)"
+            ),
             (),
         )
         self._execute(
@@ -705,6 +727,13 @@ class MetadataStore:
             (),
         )
         self._execute(
+            (
+                "CREATE INDEX IF NOT EXISTS idx_audit_log_session_id "
+                "ON audit_log (session_id)"
+            ),
+            (),
+        )
+        self._execute(
             """
             CREATE TABLE IF NOT EXISTS network_rules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -719,6 +748,13 @@ class MetadataStore:
             """,
             (),
         )
+        self._execute(
+            (
+                "CREATE INDEX IF NOT EXISTS idx_network_rules_session_id "
+                "ON network_rules (session_id)"
+            ),
+            (),
+        )
 
 
 def _utc_now() -> str:
@@ -726,8 +762,13 @@ def _utc_now() -> str:
 
 
 def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
-    payload = json.loads(str(row["data"]))
+    try:
+        payload = json.loads(str(row["data"]))
+    except json.JSONDecodeError:
+        logger.warning("metadata_row_decode_failed")
+        payload = {}
     if not isinstance(payload, dict):
+        logger.warning("metadata_row_decode_non_dict")
         payload = {}
     for key in tuple(row.keys()):
         if key == "data":
@@ -739,9 +780,9 @@ def _decode_row(row: sqlite3.Row) -> dict[str, Any]:
 def _parse_minutes(value: str) -> int:
     text = value.strip().lower()
     if text.endswith("minutes"):
-        return int(text.replace("minutes", "").strip())
+        return int(text.removesuffix("minutes").strip())
     if text.endswith("minute"):
-        return int(text.replace("minute", "").strip())
+        return int(text.removesuffix("minute").strip())
     return int(text)
 
 

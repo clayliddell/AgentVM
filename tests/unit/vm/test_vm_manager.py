@@ -16,14 +16,14 @@ class _FakeStore:
     def __init__(self) -> None:
         self.vms: dict[str, dict[str, object]] = {}
 
-    def create_vm(self, **kwargs: object) -> None:
-        vm_id = str(kwargs["vm_id"])
-        self.vms[vm_id] = dict(kwargs)
+    async def create_vm(self, vm: dict[str, object]) -> None:
+        vm_id = str(vm["id"])
+        self.vms[vm_id] = dict(vm)
 
-    def get_vm(self, vm_id: str) -> dict[str, object] | None:
+    async def get_vm(self, vm_id: str) -> dict[str, object] | None:
         return self.vms.get(vm_id)
 
-    def delete_vm(self, vm_id: str) -> None:
+    async def delete_vm(self, vm_id: str) -> None:
         self.vms.pop(vm_id, None)
 
 
@@ -38,29 +38,32 @@ def _spec(vm_id: str = "vm-1") -> VMSpec:
     )
 
 
-def test_create_vm_persists_vm_record() -> None:
+@pytest.mark.anyio()
+async def test_create_vm_persists_vm_record() -> None:
     store = _FakeStore()
     manager = VMManager(store)
 
-    info = manager.create_vm(_spec())
+    info = await manager.create_vm(_spec())
 
     assert info.vm_id == "vm-1"
     assert info.ssh_host == "127.0.0.1"
     assert info.ssh_port == 22
-    assert store.get_vm("vm-1") is not None
+    assert await store.get_vm("vm-1") is not None
 
 
-def test_destroy_vm_removes_vm_record() -> None:
+@pytest.mark.anyio()
+async def test_destroy_vm_removes_vm_record() -> None:
     store = _FakeStore()
     manager = VMManager(store)
-    manager.create_vm(_spec())
+    await manager.create_vm(_spec())
 
-    manager.destroy_vm("vm-1")
+    await manager.destroy_vm("vm-1")
 
-    assert store.get_vm("vm-1") is None
+    assert await store.get_vm("vm-1") is None
 
 
-def test_get_vm_status_returns_runtime_state_override() -> None:
+@pytest.mark.anyio()
+async def test_get_vm_status_returns_runtime_state_override() -> None:
     store = _FakeStore()
     manager = VMManager(
         store,
@@ -70,9 +73,9 @@ def test_get_vm_status_returns_runtime_state_override() -> None:
             "memory_mb": 4200,
         },
     )
-    manager.create_vm(_spec())
+    await manager.create_vm(_spec())
 
-    status = manager.get_vm_status("vm-1")
+    status = await manager.get_vm_status("vm-1")
 
     assert status == VMStatus(
         vm_id="vm-1",
@@ -83,11 +86,12 @@ def test_get_vm_status_returns_runtime_state_override() -> None:
     )
 
 
-def test_get_vm_status_raises_when_vm_is_missing() -> None:
+@pytest.mark.anyio()
+async def test_get_vm_status_raises_when_vm_is_missing() -> None:
     manager = VMManager(_FakeStore())
 
     with pytest.raises(ValueError, match="vm not found"):
-        manager.get_vm_status("missing")
+        await manager.get_vm_status("missing")
 
 
 def test_check_host_capacity_delegates_to_capacity_manager() -> None:

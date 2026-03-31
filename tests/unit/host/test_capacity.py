@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pytest
 
@@ -120,7 +120,10 @@ def test_allocate_raises_for_duplicate_vm_id(tmp_path: Path) -> None:
         manager.allocate("vm-a", cpu_cores=1, memory_mb=1, disk_gb=1)
 
 
-def test_reconcile_allocations_rebuilds_from_metadata_store(tmp_path: Path) -> None:
+@pytest.mark.anyio()
+async def test_reconcile_allocations_rebuilds_from_metadata_store(
+    tmp_path: Path,
+) -> None:
     manager = _build_manager(
         tmp_path,
         cpuinfo="processor : 0\nprocessor : 1\nprocessor : 2\nprocessor : 3\n",
@@ -155,14 +158,17 @@ def test_reconcile_allocations_rebuilds_from_metadata_store(tmp_path: Path) -> N
                 },
             ]
 
-    manager.reconcile_allocations(FakeStore())
+    await manager.reconcile_allocations(FakeStore())
     capacity = manager.get_capacity()
 
     assert capacity.active_vm_count == 2
     assert capacity.available_cpu == 0
 
 
-def test_reconcile_allocations_supports_async_get_active_vms(tmp_path: Path) -> None:
+@pytest.mark.anyio()
+async def test_reconcile_allocations_supports_async_get_active_vms(
+    tmp_path: Path,
+) -> None:
     manager = _build_manager(
         tmp_path,
         cpuinfo="processor : 0\nprocessor : 1\n",
@@ -177,12 +183,13 @@ def test_reconcile_allocations_supports_async_get_active_vms(tmp_path: Path) -> 
                 {"vm_id": "vm-x", "cpu_cores": "1", "memory_mb": "1024", "disk_gb": "2"}
             ]
 
-    manager.reconcile_allocations(AsyncStore())
+    await manager.reconcile_allocations(AsyncStore())
 
     assert manager.get_capacity().active_vm_count == 1
 
 
-def test_reconcile_allocations_ignores_invalid_vm_rows(tmp_path: Path) -> None:
+@pytest.mark.anyio()
+async def test_reconcile_allocations_ignores_invalid_vm_rows(tmp_path: Path) -> None:
     manager = _build_manager(
         tmp_path,
         cpuinfo="processor : 0\nprocessor : 1\n",
@@ -199,11 +206,12 @@ def test_reconcile_allocations_ignores_invalid_vm_rows(tmp_path: Path) -> None:
                 10,
             ]
 
-    manager.reconcile_allocations(Store())
+    await manager.reconcile_allocations(Store())
     assert manager.get_capacity().active_vm_count == 0
 
 
-def test_reconcile_allocations_raises_for_invalid_store_contract(
+@pytest.mark.anyio()
+async def test_reconcile_allocations_raises_for_invalid_store_contract(
     tmp_path: Path,
 ) -> None:
     manager = _build_manager(
@@ -222,10 +230,10 @@ def test_reconcile_allocations_raises_for_invalid_store_contract(
             return "not-a-list"
 
     with pytest.raises(TypeError):
-        manager.reconcile_allocations(NoVmMethods())
+        await manager.reconcile_allocations(NoVmMethods())
 
     with pytest.raises(TypeError):
-        manager.reconcile_allocations(BadReturnStore())
+        await manager.reconcile_allocations(BadReturnStore())
 
 
 def test_cpu_memory_and_disk_fallback_paths(tmp_path: Path) -> None:

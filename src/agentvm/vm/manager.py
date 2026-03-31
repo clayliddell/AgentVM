@@ -5,10 +5,9 @@ Ref: VM-MANAGER-LLD Section 3.1
 
 from __future__ import annotations
 
-import asyncio
-import inspect
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 
 @dataclass(frozen=True)
@@ -82,7 +81,7 @@ class VMManager:
         self._capacity_manager = capacity_manager
         self._runtime_state_provider = runtime_state_provider
 
-    def create_vm(self, spec: VMSpec) -> VMConnectionInfo:
+    async def create_vm(self, spec: VMSpec) -> VMConnectionInfo:
         """Persist a VM record and return connection information.
 
         Args:
@@ -98,19 +97,25 @@ class VMManager:
         if not callable(create_vm):
             raise ValueError("metadata store missing create_vm()")
 
-        _run_maybe_async(
+        create_vm_call = cast(
+            Callable[[dict[str, object]], Awaitable[object]],
             create_vm,
-            vm_id=spec.vm_id,
-            session_id=spec.session_id,
-            image_id=spec.image_id,
-            cpu_cores=spec.cpu_cores,
-            memory_mb=spec.memory_mb,
-            disk_gb=spec.disk_gb,
-            status="creating",
+        )
+
+        await create_vm_call(
+            {
+                "id": spec.vm_id,
+                "session_id": spec.session_id,
+                "base_image": spec.image_id,
+                "cpu_cores": spec.cpu_cores,
+                "memory_mb": spec.memory_mb,
+                "disk_gb": spec.disk_gb,
+                "status": "creating",
+            }
         )
         return VMConnectionInfo(vm_id=spec.vm_id, ssh_host="127.0.0.1", ssh_port=22)
 
-    def destroy_vm(self, vm_id: str) -> None:
+    async def destroy_vm(self, vm_id: str) -> None:
         """Delete VM metadata.
 
         Args:
@@ -125,9 +130,10 @@ class VMManager:
         delete_vm = getattr(self._store, "delete_vm", None)
         if not callable(delete_vm):
             raise ValueError("metadata store missing delete_vm()")
-        _run_maybe_async(delete_vm, vm_id)
+        delete_vm_call = cast(Callable[[str], Awaitable[object]], delete_vm)
+        await delete_vm_call(vm_id)
 
-    def get_vm_status(self, vm_id: str) -> VMStatus:
+    async def get_vm_status(self, vm_id: str) -> VMStatus:
         """Return current VM status.
 
         Args:
@@ -146,7 +152,8 @@ class VMManager:
         if not callable(get_vm):
             raise ValueError("metadata store missing get_vm()")
 
-        vm_record = _run_maybe_async(get_vm, vm_id)
+        get_vm_call = cast(Callable[[str], Awaitable[object]], get_vm)
+        vm_record = await get_vm_call(vm_id)
         if not isinstance(vm_record, dict):
             raise ValueError(f"vm not found: {vm_id}")
 
@@ -189,10 +196,3 @@ class VMManager:
         if not callable(check_spec):
             raise ValueError("capacity manager missing check_spec()")
         return check_spec(spec.cpu_cores, spec.memory_mb, spec.disk_gb)
-
-
-def _run_maybe_async(func: Any, *args: object, **kwargs: object) -> Any:
-    value = func(*args, **kwargs)
-    if inspect.iscoroutine(value):
-        return asyncio.run(value)
-    return value

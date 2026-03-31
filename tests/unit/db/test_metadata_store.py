@@ -40,10 +40,13 @@ async def test_session_crud_and_filters(store: MetadataStore) -> None:
     assert fetched is not None
     assert fetched["owner"] == "alice"
 
-    await store.update_session("session-1", {"status": "running"})
+    updated = await store.update_session("session-1", {"status": "running"})
+    assert updated is True
     running = await store.list_sessions(owner="alice", status="running")
     assert len(running) == 1
     assert running[0]["id"] == "session-1"
+
+    assert await store.update_session("missing", {"status": "running"}) is False
 
     await store.delete_session("session-1")
     assert await store.get_session("session-1") is None
@@ -82,7 +85,8 @@ async def test_vm_crud_and_lookup_helpers(store: MetadataStore) -> None:
     assert fetched is not None
     assert fetched["name"] == "vm-1"
 
-    await store.update_vm("vm-1", {"status": "running"})
+    updated = await store.update_vm("vm-1", {"status": "running"})
+    assert updated is True
     by_session = await store.get_vm_by_session("session-1")
     assert by_session is not None
     assert by_session["status"] == "running"
@@ -91,8 +95,10 @@ async def test_vm_crud_and_lookup_helpers(store: MetadataStore) -> None:
     assert len(by_image) == 1
     assert by_image[0]["id"] == "vm-1"
 
-    active = store.get_active_vms()
+    active = await store.get_active_vms()
     assert len(active) == 1
+
+    assert await store.update_vm("missing", {"status": "running"}) is False
 
     await store.delete_vm("vm-1")
     assert await store.get_vm("vm-1") is None
@@ -153,6 +159,74 @@ async def test_audit_log_query_and_schema_version(store: MetadataStore) -> None:
 
     await store.run_migrations(2)
     assert await store.get_schema_version() == 2
+
+
+@pytest.mark.anyio()
+async def test_parse_minutes_rejects_invalid_prefix_text(store: MetadataStore) -> None:
+    await store.create_session(
+        {"id": "session-1", "owner": "alice", "status": "creating"}
+    )
+
+    with pytest.raises(ValueError):
+        await store.get_sessions_by_status_and_age("creating", "minutes5")
+
+
+@pytest.mark.anyio()
+async def test_get_vm_tolerates_invalid_json_payload(store: MetadataStore) -> None:
+    store._execute(
+        (
+            "INSERT INTO vms (id, session_id, name, status, base_image, cpu_cores, "
+            "memory_mb, disk_gb, created_at, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            "?)"
+        ),
+        (
+            "vm-bad-json",
+            "session-1",
+            "vm-bad-json",
+            "running",
+            "ubuntu",
+            1,
+            512,
+            10,
+            datetime.now(tz=UTC).isoformat(),
+            "not-json",
+        ),
+    )
+
+    fetched = await store.get_vm("vm-bad-json")
+
+    assert fetched is not None
+    assert fetched["id"] == "vm-bad-json"
+    assert fetched["status"] == "running"
+
+
+@pytest.mark.anyio()
+async def test_get_vm_tolerates_non_dict_json_payload(store: MetadataStore) -> None:
+    store._execute(
+        (
+            "INSERT INTO vms (id, session_id, name, status, base_image, cpu_cores, "
+            "memory_mb, disk_gb, created_at, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            "?)"
+        ),
+        (
+            "vm-bad-payload",
+            "session-1",
+            "vm-bad-payload",
+            "running",
+            "ubuntu",
+            1,
+            512,
+            10,
+            datetime.now(tz=UTC).isoformat(),
+            "[]",
+        ),
+    )
+
+    fetched = await store.get_vm("vm-bad-payload")
+
+    assert fetched is not None
+    assert fetched["id"] == "vm-bad-payload"
+    assert fetched["status"] == "running"
 
 
 @pytest.mark.anyio()

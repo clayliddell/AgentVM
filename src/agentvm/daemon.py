@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
 
-import structlog  # type: ignore[import-not-found]
-import uvicorn  # type: ignore[import-not-found]
+import structlog
+import uvicorn
 
 from agentvm.api.app import create_app
 from agentvm.config import AgentVMConfig
@@ -42,6 +42,7 @@ class _DaemonState:
     server: uvicorn.Server | None = None
     session_manager: SessionManager | None = None
     capacity_manager: CapacityManager | None = None
+    bridge_manager: BridgeManager | None = None
     metrics: MetricsCollector | None = None
     store: MetadataStore | None = None
     shutting_down: asyncio.Event = field(default_factory=asyncio.Event)
@@ -142,7 +143,13 @@ def _ensure_storage_tree(config: AgentVMConfig) -> None:
         config.storage.proxy_dir,
     ]
     for path in storage_paths:
-        Path(path).mkdir(parents=True, exist_ok=True)
+        directory = Path(path)
+        try:
+            directory.mkdir(mode=0o750, parents=True, exist_ok=True)
+            directory.chmod(0o750)
+        except OSError:
+            logger.exception("storage_tree_create_failed", path=path)
+            raise
 
 
 async def run_daemon(config: AgentVMConfig) -> None:
@@ -157,7 +164,7 @@ async def run_daemon(config: AgentVMConfig) -> None:
     # 1b. Reconcile host allocations from metadata records.
     _state.capacity_manager = CapacityManager(config)
     try:
-        _state.capacity_manager.reconcile_allocations(_state.store)
+        await _state.capacity_manager.reconcile_allocations(_state.store)
     except ValueError as exc:
         logger.warning("capacity_reconcile_skipped", error=str(exc))
 
@@ -166,6 +173,7 @@ async def run_daemon(config: AgentVMConfig) -> None:
 
     # 3. Ensure network bridge exists
     bridge_manager = BridgeManager(bridge_name=config.network.bridge_name)
+    _state.bridge_manager = bridge_manager
     bridge_name = bridge_manager.ensure_bridge()
 
     # 4. Wire session and observability components

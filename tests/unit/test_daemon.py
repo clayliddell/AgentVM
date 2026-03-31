@@ -32,6 +32,7 @@ def mock_state() -> _DaemonState:
     state = _DaemonState(
         server=MagicMock(),
         session_manager=MagicMock(),
+        bridge_manager=MagicMock(),
         metrics=MagicMock(),
         store=MagicMock(),
         shutting_down=asyncio.Event(),
@@ -97,6 +98,7 @@ class TestAsyncGracefulShutdown:
         state = _DaemonState(
             server=None,
             session_manager=None,
+            bridge_manager=None,
             metrics=None,
             store=None,
             shutting_down=asyncio.Event(),
@@ -296,6 +298,7 @@ class TestRunDaemon:
         mock_bridge = MagicMock()
         mock_bridge.ensure_bridge.return_value = config.network.bridge_name
         mock_capacity = MagicMock()
+        mock_capacity.reconcile_allocations = AsyncMock()
 
         with (
             patch("agentvm.daemon._state", _DaemonState()),
@@ -308,7 +311,7 @@ class TestRunDaemon:
             await run_daemon(config)
 
         mock_store.initialize.assert_awaited_once()
-        mock_capacity.reconcile_allocations.assert_called_once_with(mock_store)
+        mock_capacity.reconcile_allocations.assert_awaited_once_with(mock_store)
         mock_bridge.ensure_bridge.assert_called_once_with()
         register_handlers.assert_called_once_with()
         mock_server.serve.assert_awaited_once_with()
@@ -317,3 +320,58 @@ class TestRunDaemon:
         assert (tmp_path / "agentvm" / "vms").is_dir()
         assert (tmp_path / "agentvm" / "shared").is_dir()
         assert (tmp_path / "agentvm" / "proxy").is_dir()
+
+    @pytest.mark.anyio()
+    async def test_run_daemon_warns_and_continues_on_capacity_reconcile_value_error(
+        self, tmp_path: Path
+    ) -> None:
+        config = AgentVMConfig.load()
+        storage = replace(
+            config.storage,
+            base_dir=str(tmp_path / "agentvm"),
+            base_images_dir=str(tmp_path / "agentvm" / "base"),
+            vm_data_dir=str(tmp_path / "agentvm" / "vms"),
+            shared_dir=str(tmp_path / "agentvm" / "shared"),
+            proxy_dir=str(tmp_path / "agentvm" / "proxy"),
+        )
+        observability = replace(config.observability, metrics_enabled=False)
+        config = replace(config, storage=storage, observability=observability)
+
+        mock_store = MagicMock()
+        mock_store.initialize = AsyncMock()
+        mock_server = MagicMock()
+        mock_server.serve = AsyncMock()
+        mock_bridge = MagicMock()
+        mock_bridge.ensure_bridge.return_value = config.network.bridge_name
+        mock_capacity = MagicMock()
+        mock_capacity.reconcile_allocations = AsyncMock(
+            side_effect=ValueError("bad data")
+        )
+
+        with (
+            patch("agentvm.daemon._state", _DaemonState()),
+            patch("agentvm.daemon.MetadataStore", return_value=mock_store),
+            patch("agentvm.daemon.CapacityManager", return_value=mock_capacity),
+            patch("agentvm.daemon.BridgeManager", return_value=mock_bridge),
+            patch("agentvm.daemon.uvicorn.Server", return_value=mock_server),
+            patch("agentvm.daemon.register_signal_handlers"),
+            patch("agentvm.daemon.logger") as mock_logger,
+        ):
+            await run_daemon(config)
+
+        mock_logger.warning.assert_called_once_with(
+            "capacity_reconcile_skipped", error="bad data"
+        )
+        mock_server.serve.assert_awaited_once_with()
+
+    def test_ensure_storage_tree_logs_and_reraises_oserror(self) -> None:
+        config = AgentVMConfig.load()
+
+        with (
+            patch("agentvm.daemon.Path.mkdir", side_effect=PermissionError("denied")),
+            patch("agentvm.daemon.logger") as mock_logger,
+            pytest.raises(PermissionError, match="denied"),
+        ):
+            _ensure_storage_tree(config)
+
+        mock_logger.exception.assert_called_once()

@@ -5,7 +5,7 @@ Ref: REST-API-LLD §3.1
 
 from __future__ import annotations
 
-from fastapi import FastAPI  # type: ignore[import-not-found]
+from fastapi import FastAPI
 
 
 def create_app() -> FastAPI:

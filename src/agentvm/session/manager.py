@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import structlog  # type: ignore[import-not-found]
+import structlog
 
 logger = structlog.get_logger()
 
