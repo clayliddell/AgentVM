@@ -38,3 +38,27 @@ def test_ensure_storage_tree_is_idempotent(tmp_path: Path) -> None:
     manager.ensure_storage_tree()
 
     assert (tmp_path / "agentvm" / "vms").is_dir()
+
+
+def test_delete_disk_overlay_when_vm_directory_exists_removes_directory(
+    tmp_path: Path,
+) -> None:
+    manager = StorageManager(_storage_config(tmp_path))
+    vm_dir = tmp_path / "agentvm" / "vms" / "vm-test-vm"
+    vm_dir.mkdir(parents=True)
+    (vm_dir / "overlay.qcow2").write_text("overlay", encoding="utf-8")
+    (vm_dir / "cloud-init.iso").write_text("iso", encoding="utf-8")
+
+    manager.delete_disk_overlay("test-vm")
+
+    assert not vm_dir.exists()
+
+
+def test_delete_disk_overlay_when_vm_directory_missing_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    manager = StorageManager(_storage_config(tmp_path))
+
+    manager.delete_disk_overlay("missing-vm")
+
+    assert not (tmp_path / "agentvm" / "vms" / "vm-missing-vm").exists()

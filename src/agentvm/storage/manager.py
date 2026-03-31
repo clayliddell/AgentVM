@@ -5,6 +5,7 @@ Ref: STORAGE-MANAGER-LLD Section 5.1
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from agentvm.config import StorageConfig
@@ -47,3 +48,19 @@ class StorageManager:
             self._config.proxy_dir,
         ):
             Path(path).mkdir(parents=True, exist_ok=True)
+
+    def delete_disk_overlay(self, vm_id: str) -> None:
+        """Delete a VM's disk overlay directory.
+
+        Args:
+            vm_id: Unique VM identifier.
+
+        Returns:
+            None
+
+        Ref: STORAGE-MANAGER-LLD Section 5.4
+        """
+
+        vm_dir = Path(self._config.vm_data_dir) / f"vm-{vm_id}"
+        if vm_dir.exists():
+            shutil.rmtree(vm_dir)
