@@ -8,9 +8,15 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 
+MAX_MAC_ALLOCATION_RETRIES = 1000
+
 
 class BridgeManager:
     """Bridge lifecycle management.
+
+    This manager currently assumes single-threaded access. Callers using it
+    across threads must provide their own synchronization until network
+    provisioning adds explicit locking.
 
     Ref: NETWORK-MANAGER-LLD Section 3.1
     """
@@ -45,6 +51,7 @@ class BridgeManager:
 
         This is a minimal startup implementation that treats bridge
         verification as a no-op until full network provisioning is added.
+        TODO(CLA-26): replace this with real host bridge verification.
 
         Returns:
             str: Configured bridge name.
@@ -66,6 +73,9 @@ class BridgeManager:
         Ref: NETWORK-MANAGER-LLD Section 3.1
         """
 
+        if not session_id.strip():
+            raise ValueError("session_id must be a non-empty string")
+
         existing = self._session_interfaces.get(session_id)
         if existing is not None:
             return existing
@@ -79,18 +89,43 @@ class BridgeManager:
         self._allocated_macs.add(mac_address)
         return interface
 
+    def deallocate_vm_interface(self, session_id: str) -> None:
+        """Release a previously allocated interface for a session.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            None
+
+        Ref: NETWORK-MANAGER-LLD Section 3.1
+        """
+
+        interface = self._session_interfaces.pop(session_id, None)
+        if interface is None:
+            return
+
+        vnet_name, mac_address = interface
+        self._allocated_vnets.discard(vnet_name)
+        self._allocated_macs.discard(mac_address)
+
     def _allocate_vnet_name(self) -> str:
-        while True:
-            candidate = f"vnet{self._next_vnet_index}"
-            self._next_vnet_index += 1
-            if candidate not in self._allocated_vnets:
-                return candidate
+        candidate = f"vnet{self._next_vnet_index}"
+        self._next_vnet_index += 1
+        return candidate
 
     def _allocate_unique_mac(self) -> str:
-        while True:
-            candidate = self._mac_factory().lower()
+        for _ in range(MAX_MAC_ALLOCATION_RETRIES):
+            try:
+                candidate = self._mac_factory().lower()
+            except StopIteration as exc:
+                raise RuntimeError(
+                    "mac_factory exhausted before producing a unique MAC"
+                ) from exc
             if candidate not in self._allocated_macs:
                 return candidate
+
+        raise RuntimeError("failed to allocate a unique MAC after maximum retries")
 
     @staticmethod
     def _generate_mac() -> str:

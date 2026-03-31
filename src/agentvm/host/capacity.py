@@ -5,7 +5,6 @@ Ref: HOST-MANAGER-LLD Section 5.2
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import os
 from collections.abc import Awaitable, Callable
@@ -216,7 +215,7 @@ class CapacityManager:
 
         self._allocations.pop(vm_id, None)
 
-    def reconcile_allocations(self, metadata_store: object) -> None:
+    async def reconcile_allocations(self, metadata_store: object) -> None:
         """Rebuild allocation tracking from metadata records.
 
         Args:
@@ -228,7 +227,7 @@ class CapacityManager:
         Ref: HOST-MANAGER-LLD Section 5.2
         """
 
-        vms = self._fetch_active_vms(metadata_store)
+        vms = await self._fetch_active_vms(metadata_store)
 
         rebuilt: dict[str, _Allocation] = {}
         for vm in vms:
@@ -247,7 +246,9 @@ class CapacityManager:
 
         self._allocations = rebuilt
 
-    def _fetch_active_vms(self, metadata_store: object) -> list[dict[str, object]]:
+    async def _fetch_active_vms(
+        self, metadata_store: object
+    ) -> list[dict[str, object]]:
         """Retrieve active VMs from metadata store.
 
         Ref: HOST-MANAGER-LLD Section 5.2
@@ -270,7 +271,7 @@ class CapacityManager:
             )
 
         if inspect.isawaitable(response):
-            response = asyncio.run(_resolve(cast(Awaitable[object], response)))
+            response = await _resolve(cast(Awaitable[object], response))
 
         if not isinstance(response, list):
             raise TypeError("metadata_store VM query must return list[dict]")
