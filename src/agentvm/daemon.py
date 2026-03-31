@@ -17,6 +17,7 @@ import uvicorn  # type: ignore[import-not-found]
 from agentvm.api.app import create_app
 from agentvm.config import AgentVMConfig
 from agentvm.db.store import MetadataStore
+from agentvm.host.capacity import CapacityManager
 from agentvm.net.bridge import BridgeManager
 from agentvm.observe.metrics import MetricsCollector
 from agentvm.session.manager import SessionManager
@@ -40,6 +41,7 @@ class _DaemonState:
 
     server: uvicorn.Server | None = None
     session_manager: SessionManager | None = None
+    capacity_manager: CapacityManager | None = None
     metrics: MetricsCollector | None = None
     store: MetadataStore | None = None
     shutting_down: asyncio.Event = field(default_factory=asyncio.Event)
@@ -151,6 +153,13 @@ async def run_daemon(config: AgentVMConfig) -> None:
     # 1. Initialize metadata store
     _state.store = MetadataStore()
     await _state.store.initialize()
+
+    # 1b. Reconcile host allocations from metadata records.
+    _state.capacity_manager = CapacityManager(config)
+    try:
+        _state.capacity_manager.reconcile_allocations(_state.store)
+    except ValueError as exc:
+        logger.warning("capacity_reconcile_skipped", error=str(exc))
 
     # 2. Ensure storage tree exists
     _ensure_storage_tree(config)

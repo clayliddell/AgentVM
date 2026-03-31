@@ -295,10 +295,12 @@ class TestRunDaemon:
         mock_server.serve = AsyncMock()
         mock_bridge = MagicMock()
         mock_bridge.ensure_bridge.return_value = config.network.bridge_name
+        mock_capacity = MagicMock()
 
         with (
             patch("agentvm.daemon._state", _DaemonState()),
             patch("agentvm.daemon.MetadataStore", return_value=mock_store),
+            patch("agentvm.daemon.CapacityManager", return_value=mock_capacity),
             patch("agentvm.daemon.BridgeManager", return_value=mock_bridge),
             patch("agentvm.daemon.uvicorn.Server", return_value=mock_server),
             patch("agentvm.daemon.register_signal_handlers") as register_handlers,
@@ -306,6 +308,7 @@ class TestRunDaemon:
             await run_daemon(config)
 
         mock_store.initialize.assert_awaited_once()
+        mock_capacity.reconcile_allocations.assert_called_once_with(mock_store)
         mock_bridge.ensure_bridge.assert_called_once_with()
         register_handlers.assert_called_once_with()
         mock_server.serve.assert_awaited_once_with()
